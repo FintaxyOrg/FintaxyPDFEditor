@@ -1,0 +1,37 @@
+# Versiunea portabilă: la fiecare tag v* (ex. v0.11.0) GitHub construiește PDF-Sign-win64.zip pe Windows
+# și îl pune la Releases. „Run workflow” din tab-ul Actions face doar build-ul (zip-ul rămâne la Artifacts).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build
+        shell: pwsh
+        run: ./app/build.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PDF-Sign-win64
+          path: dist/PDF-Sign-win64.zip
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create $env:GITHUB_REF_NAME dist/PDF-Sign-win64.zip --title "PDF Sign $env:GITHUB_REF_NAME" --generate-notes

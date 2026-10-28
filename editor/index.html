@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor PDF</title>
+<link rel="stylesheet" href="/editor/editor.css">
+<link rel="icon" href="/editor/icon.png">
+</head>
+<body data-tool="select">
+<header class="top">
+  <div class="doc">
+    <button class="icon ghost-btn" id="btnOpen" title="Deschide alt PDF (Ctrl+O)"></button>
+    <span class="doc-name" id="docName">…</span>
+    <button class="icon ghost-btn" id="btnExplorer" title="Arată în Explorer"></button>
+    <button class="icon ghost-btn" id="btnCopyPath" title="Copiază calea fișierului"></button>
+  </div>
+  <div class="nav">
+    <button class="icon" id="prev" title="Pagina anterioară"></button>
+    <span class="pg" id="pg">– / –</span>
+    <button class="icon" id="next" title="Pagina următoare"></button>
+    <span class="sep"></span>
+    <button class="icon" id="zout" title="Micșorează"></button>
+    <button class="pct" id="zpct" title="Potrivește lățimea">100%</button>
+    <button class="icon" id="zin" title="Mărește"></button>
+    <span class="sep"></span>
+    <button class="icon" id="rotL" title="Rotește pagina spre stânga · Shift = toate paginile"></button>
+    <button class="icon" id="rotR" title="Rotește pagina spre dreapta · Shift = toate paginile"></button>
+  </div>
+  <div class="actions">
+    <button class="pct" id="btnLang"></button>
+    <button class="icon" id="btnComments" title="Comentariile"><span class="count" id="commentCount" hidden></span></button>
+    <button class="primary" id="btnSave" disabled>Salvează</button>
+  </div>
+</header>
+
+<nav class="rail" id="rail">
+  <button data-tool="select" title="Selectează și mută (V)"></button>
+  <button data-tool="sig" title="Semnătură (S)"></button>
+  <button data-tool="text" title="Adaugă text (T)"></button>
+  <button data-tool="edit" title="Editează textul din PDF (E)"></button>
+  <span class="rail-sep"></span>
+  <button data-tool="comment" title="Comentariu pentru Claude (C)"></button>
+  <button data-tool="region" title="Captură zonă pentru Claude (R)"></button>
+  <span class="rail-sep"></span>
+  <button data-panel="tools" title="Toate uneltele PDF"></button>
+</nav>
+
+<div class="ctxbar" id="ctxbar"></div>
+<main id="pages" tabindex="-1"></main>
+<div class="flyout" id="sigFlyout" hidden></div>
+<aside class="drawer" id="drawer" hidden></aside>
+<div class="hint" id="hint"></div>
+<div class="toasts" id="toasts"></div>
+
+<script type="module" src="/editor/editor.js"></script>
+</body>
+</html>

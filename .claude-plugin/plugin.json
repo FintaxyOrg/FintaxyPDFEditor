@@ -1,0 +1,9 @@
+{
+  "name": "pdf-sign",
+  "version": "0.11.0",
+  "description": "Preview de PDF în chat și buton Semnează: alegi semnătura din bibliotecă și o pui pe pagină cu mouse-ul (continuarea skill-ului semnare-pdf).",
+  "author": {
+    "name": "Fintaxy"
+  },
+  "types": "./types/index.d.ts"
+}
