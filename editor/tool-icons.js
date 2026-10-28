@@ -85,7 +85,7 @@ const P = {
 }
 
 const BY_ID = {
-  edit: 'filePen', merge: 'files', compress: 'shrink', ocr: 'scanText', autoredact: 'eyeOff', replace: 'replace',
+  edit: 'filePen', organize: 'grid2', merge: 'files', compress: 'shrink', ocr: 'scanText', autoredact: 'eyeOff', replace: 'replace',
   signature: 'signature', certsign: 'award', bulksign: 'files', timestamp: 'clock', removesign: 'fileX', validatesign: 'shieldCheck',
   password: 'lock', permissions: 'key', unpassword: 'lockOpen', watermark: 'droplet', stamp: 'stamp', sanitize: 'sparkles',
   flatten: 'layers', unlockforms: 'formInput', redactareas: 'eraser',
@@ -95,7 +95,7 @@ const BY_ID = {
   rotate: 'rotateCw', autorotate: 'refresh', crop: 'crop', rearrange: 'arrowDownUp', split: 'scissors', splitsize: 'split',
   splitchapters: 'bookOpen', splitsections: 'grid', autosplit: 'wand', scale: 'scaling', nup: 'grid2', booklet: 'book',
   singlepage: 'tall', poster: 'expand', overlay: 'copy',
-  images: 'image', scans: 'scan', attachments: 'paperclip', listattach: 'list', bookmarks: 'bookmark', js: 'code', autorename: 'heading',
+  extract: 'fileUp', fromoffice: 'fileUp', images: 'image', scans: 'scan', attachments: 'paperclip', listattach: 'list', bookmarks: 'bookmark', js: 'code', autorename: 'heading',
   removepages: 'fileMinus', removeblanks: 'fileBlank', removeimages: 'imageOff', deleteattach: 'trash',
   toword: 'fileText', toexcel: 'sheet', toppt: 'presentation', toimg: 'image', tohtml: 'codeXml', tomd: 'pilcrow', totext: 'alignLeft',
   tocsv: 'table', topdfa: 'archive', toepub: 'book', toxml: 'code', tocbz: 'images', tovector: 'penTool',

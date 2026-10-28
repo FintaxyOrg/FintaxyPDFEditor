@@ -32,6 +32,7 @@ const ICONS = {
   comment: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
   region: '<path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h1"/><path d="M14 3h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/>',
   grid: '<rect width="7" height="7" x="3" y="3" rx="1.5"/><rect width="7" height="7" x="14" y="3" rx="1.5"/><rect width="7" height="7" x="14" y="14" rx="1.5"/><rect width="7" height="7" x="3" y="14" rx="1.5"/>',
+  pages: '<path d="M15 2h-4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8z"/><path d="M15 2v6h6"/><path d="M5 7v12a2 2 0 0 0 2 2h9"/>',
   left: '<path d="m15 18-6-6 6-6"/>', right: '<path d="m9 18 6-6-6-6"/>',
   rotL: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
   rotR: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
@@ -971,7 +972,11 @@ function openTools(filter = '') {
     // tot ce mai are Stirling și nu e în catalog
     const known = new Set(TOOLS.map(t => t.endpoint))
     const spec = await loadSpec().catch(() => null)
-    if (!spec) return list.append(h('div', { class: 'empty' }, 'Uneltele Stirling se încarcă când deschizi una (pornesc Stirling PDF dacă e nevoie).'))
+    if (!spec) {
+      return list.append(h('div', { class: 'empty' }, S.app.stirling
+        ? 'Uneltele Stirling se încarcă când deschizi una (pornesc Stirling PDF dacă e nevoie).'
+        : 'Uneltele marcate „Stirling” (OCR, conversii rare) au nevoie de Stirling PDF instalat; restul merg direct.'))
+    }
     const rest = Object.entries(spec.tools).filter(([ep, s]) => !known.has(ep) && !/text-editor|pipeline/.test(ep) && match({ label: s.summary, endpoint: ep }))
     if (rest.length) {
       list.append(h('div', { class: 'grp' }, `Toate uneltele Stirling ${spec.version || ''}`))
@@ -990,7 +995,8 @@ function toolRow(t) {
   const ic = document.createElement('template')
   ic.innerHTML = toolIconSvg(t)
   return h('button', { class: 'tool', title: t.desc || '', onclick: () => (t.native ? (closeDrawer(), setTool(t.native)) : openToolForm(t)) },
-    ic.content.firstChild, h('span', { class: 'tl' }, t.label))
+    ic.content.firstChild, h('span', { class: 'tl' }, t.label),
+    needsStirling(t) ? h('span', { class: 'needs', title: 'Are nevoie de Stirling PDF instalat' }, 'Stirling') : null)
 }
 
 const humanize = n => n.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase())
@@ -1003,12 +1009,92 @@ function fileToB64(file) {
   })
 }
 
+// ---------- uneltele din aplicație (bin/localtools.py) ----------
+// Formularul se face din câmpurile scrise în catalog (tools.js): text, pagini, număr, listă, bifă, parolă, fișiere.
+function localField(form, f) {
+  const label = h('span', {}, f.label + (f.required ? ' *' : ''))
+  if (f.type === 'files') {
+    const files = []
+    const list = h('div', { class: 'blist' })
+    const draw = () => {
+      list.replaceChildren(...files.map((p, i) => h('div', { class: 'brow' }, h('span', { class: 'bn', title: p }, base(p)),
+        h('button', { class: 'linkbtn danger', type: 'button', onclick: () => { files.splice(i, 1); draw() } }, 'Scoate'))))
+      if (!files.length) list.append(h('div', { class: 'empty' }, 'Niciun fișier ales.'))
+    }
+    const add = h('button', { class: 'secondary', type: 'button' }, '+ Adaugă fișiere…')
+    add.addEventListener('click', async () => {
+      try {
+        const r = await post('pickmany', { dir: S.doc?.dir || '', kind: f.kind || 'pdf' })
+        for (const p of r.paths) if (!files.some(x => x.toLowerCase() === p.toLowerCase())) files.push(p)
+        draw()
+      } catch (err) {
+        toast(err.message, { err: true })
+      }
+    })
+    draw()
+    form.append(h('div', { class: 'field' }, label, list, h('div', {}, add)))
+    return () => files
+  }
+  let el
+  if (f.type === 'select') {
+    el = h('select', {}, ...f.options.map(([v, l]) => h('option', { value: v, selected: String(v) === String(f.def ?? '') }, l)))
+  } else if (f.type === 'check') {
+    el = h('input', { type: 'checkbox', checked: !!f.def })
+    form.append(h('label', { class: 'field' }, h('span', { class: 'check' }, el, f.label)))
+    return () => el.checked
+  } else {
+    const ph = f.type === 'pages' ? 'toate; sau ex. 1-3, 5, 8-' : f.ph || ''
+    el = h('input', { type: f.type === 'password' ? 'password' : f.type === 'number' ? 'number' : 'text', placeholder: ph })
+    if (f.def != null) el.value = String(f.def)
+  }
+  form.append(h('label', { class: 'field' }, label, el))
+  return () => el.value
+}
+function openLocalTool(t) {
+  const form = h('div', { class: 'form' })
+  const d = openDrawer(t.label, h('div', { class: 'db' }, form))
+  d.querySelector('.dh').prepend(h('button', { class: 'icon', title: 'Înapoi la unelte', onclick: () => openTools() }, icon('back')))
+  if (t.desc) form.append(h('p', { class: 'desc' }, t.desc))
+  if (changed().length && !t.noDoc) form.append(h('div', { class: 'warn' }, 'Ai modificări nesalvate. Unealta lucrează pe fișierul salvat; apasă întâi Salvează dacă vrei să le includă.'))
+  const reads = (t.fields || []).map(f => [f, localField(form, f)])
+  const go = h('button', { class: 'primary' }, 'Rulează')
+  const result = h('div')
+  form.append(h('div', { class: 'buttons' }, go), result)
+  go.addEventListener('click', async () => {
+    const fields = {}
+    for (const [f, read] of reads) {
+      const v = read()
+      if (f.required && (v === '' || (Array.isArray(v) && !v.length))) return result.replaceChildren(h('div', { class: 'result err' }, tr(`Completează: ${f.label}`)))
+      fields[f.name] = v
+    }
+    go.disabled = true
+    result.replaceChildren(h('div', { class: 'result' }, h('span', { class: 'spin' }), 'Lucrez…'))
+    try {
+      const r = await post('local', { tool: t.local, path: t.noDoc ? '' : PATH, fields, label: t.label })
+      result.replaceChildren(showResult(r))
+    } catch (err) {
+      result.replaceChildren(h('div', { class: 'result err' }, err.message))
+    } finally {
+      go.disabled = false
+    }
+  })
+}
+// Uneltele care au rămas doar în Stirling: fără el, un mesaj cu ce e de instalat în loc de o eroare.
+const needsStirling = t => !t.local && !t.custom && !t.native && t.endpoint && !S.app.stirling
+
 async function openToolForm(t) {
   if (t.custom === 'certsign') return openCertSign()
   if (t.custom === 'bulksign') return openBulkSign()
+  if (t.custom === 'organize') return openOrganize()
+  if (t.local) return openLocalTool(t)
   const body = h('div', { class: 'db' })
   const d = openDrawer(t.label, body)
   d.querySelector('.dh').prepend(h('button', { class: 'icon', title: 'Înapoi la unelte', onclick: () => openTools() }, icon('back')))
+  if (needsStirling(t)) {
+    return body.replaceChildren(h('div', { class: 'form' }, t.desc ? h('p', { class: 'desc' }, t.desc) : null,
+      h('div', { class: 'warn' }, 'Unealta asta vine din Stirling PDF (gratuit), care nu e instalat pe calculatorul ăsta. Instalează-l de pe stirlingpdf.com sau cu comanda de mai jos, apoi redeschide PDF Sign.'),
+      h('pre', {}, 'winget install --id StirlingTools.StirlingPDF -e')))
+  }
   body.append(h('div', { class: 'form' }, h('p', { class: 'desc' }, h('span', { class: 'spin' }), 'Încarc unealta din Stirling PDF…')))
   let spec
   try {
@@ -1303,6 +1389,8 @@ function renderDocBar() {
 }
 
 function showResult(r) {
+  const notes = (r.lines || []).map(l => h('div', { style: { fontSize: '12.5px', marginTop: '4px' } }, l))
+  if (r.kind === 'report') return h('div', { class: 'result ok' }, ...notes)
   if (r.kind === 'json') {
     const text = JSON.stringify(r.json, null, 2)
     return h('div', { class: 'result ok' }, '✓ Gata', h('pre', {}, text),
@@ -1314,7 +1402,7 @@ function showResult(r) {
   else rb.append(h('button', { class: 'primary', onclick: () => post('open', { path: r.out }) }, r.kind === 'folder' ? 'Deschide folderul' : 'Deschide'))
   rb.append(h('button', { class: 'secondary', onclick: () => post('open', { path: r.out, how: 'explorer' }) }, 'Arată în Explorer'))
   return h('div', { class: 'result ok' }, h('div', {}, `✓ Gata: ${name}`), h('div', { style: { color: 'var(--muted)', fontSize: '12px', wordBreak: 'break-all' } }, r.out),
-    r.files ? h('div', { style: { fontSize: '12px', marginTop: '6px' } }, r.files.join(', ')) : null, rb)
+    ...notes, r.files ? h('div', { style: { fontSize: '12px', marginTop: '6px' } }, r.files.join(', ')) : null, rb)
 }
 
 // ---------- semnătură nouă în bibliotecă ----------
@@ -1412,9 +1500,269 @@ function openUpload() {
   document.addEventListener('paste', onPaste)
 }
 
+// ---------- organizarea paginilor ----------
+// Toate paginile ca miniaturi: le tragi în ordinea dorită (una sau mai multe selectate), le ștergi sau le rotești;
+// Salvează scrie o dată copia _editat.pdf, cu Anulează ca la orice salvare.
+function openOrganize() {
+  if (!S.doc || $('#organize')) return
+  if (S.doc.signed) return toast('PDF-ul are semnătură digitală; reordonarea paginilor ar strica-o.', { err: true })
+  if (changed().length) return toast('Ai modificări nesalvate pe pagini: apasă întâi Salvează, apoi organizează paginile.', { err: true, ms: 7000 })
+  closePop()
+  closeDrawer()
+  $('#sigFlyout').hidden = true
+  let pages = S.pages.map(p => ({ n: p.n, rot: 0 }))
+  const sel = new Set()
+  let anchor = null
+  let moving = null
+  const grid = h('div', { class: 'ogrid' })
+  const info = h('span', { class: 'oinfo' })
+  const btn = (label, title, fn, cls = 'secondary') => h('button', { class: cls, title, type: 'button', onclick: fn }, label)
+  const delBtn = btn('Șterge', 'Șterge paginile selectate (Delete)', () => removePages([...sel]))
+  const rotLBtn = btn('⟲', 'Rotește spre stânga paginile selectate', () => turn([...sel], -90))
+  const rotRBtn = btn('⟳', 'Rotește spre dreapta paginile selectate', () => turn([...sel], 90))
+  const resetBtn = btn('Ca la început', 'Renunță la toate schimbările de aici', () => { pages = S.pages.map(p => ({ n: p.n, rot: 0 })); sel.clear(); draw() })
+  const saveBtn = btn('Salvează', 'Scrie paginile în noua ordine (Ctrl+S)', () => commit(), 'primary')
+  const back = h('div', { class: 'organize', id: 'organize' },
+    h('div', { class: 'ohead' }, h('h2', {}, 'Organizează paginile'), info, h('span', { class: 'grow' }),
+      delBtn, rotLBtn, rotRBtn, resetBtn, btn('Închide', 'Închide fără să salvezi (Esc)', () => close()), saveBtn),
+    h('p', { class: 'ohint' }, 'Trage paginile în ordinea dorită · click = selectezi, Ctrl/Shift + click = mai multe · Delete = ștergi · Ctrl+A = toate'),
+    grid)
+  const changedO = () => pages.length !== S.pages.length || pages.some((p, i) => p.n !== i + 1 || p.rot % 360)
+  const close = (force) => {
+    if (!force && changedO() && !confirm(tr('Renunți la schimbările din ordinea paginilor?'))) return
+    back.remove()
+    removeEventListener('keydown', keys, true)
+  }
+  function removePages(list) {
+    if (!list.length) return
+    if (list.length >= pages.length) return toast('Trebuie să rămână cel puțin o pagină.', { err: true })
+    pages = pages.filter(p => !list.includes(p))
+    list.forEach(p => sel.delete(p))
+    draw()
+  }
+  function turn(list, deg) {
+    for (const p of list) p.rot = (p.rot + deg + 360) % 360
+    draw()
+  }
+  function pick(p, i, e) {
+    if (e.shiftKey && anchor) {
+      const a = pages.indexOf(anchor)
+      const [from, to] = a < i ? [a, i] : [i, a]
+      if (!e.ctrlKey) sel.clear()
+      pages.slice(from, to + 1).forEach(x => sel.add(x))
+    } else if (e.ctrlKey || e.metaKey) {
+      sel.has(p) ? sel.delete(p) : sel.add(p)
+      anchor = p
+    } else {
+      const only = sel.size === 1 && sel.has(p)
+      sel.clear()
+      if (!only) sel.add(p)
+      anchor = p
+    }
+    draw()
+  }
+  function card(p, i) {
+    const img = h('img', { src: url('page', { path: PATH, n: p.n, w: 300, v: S.ver }), alt: '', draggable: 'false', loading: 'lazy' })
+    img.style.transform = `rotate(${p.rot}deg)`
+    const small = (label, title, fn) => {
+      const b = h('button', { class: 'obtn', title, type: 'button' }, label)
+      b.addEventListener('click', e => { e.stopPropagation(); fn() })
+      return b
+    }
+    const el = h('div', { class: 'ocard' + (sel.has(p) ? ' sel' : ''), draggable: 'true' },
+      h('div', { class: 'othumb' }, img),
+      h('div', { class: 'ofoot' }, h('b', {}, String(i + 1)), p.n !== i + 1 ? h('small', {}, tr(`era ${p.n}`)) : null, h('span', { class: 'grow' }),
+        small('⟲', 'Rotește spre stânga', () => turn([p], -90)), small('⟳', 'Rotește spre dreapta', () => turn([p], 90)),
+        small('✕', 'Șterge pagina', () => removePages(sel.has(p) ? [...sel] : [p]))))
+    el.addEventListener('click', e => pick(p, i, e))
+    el.addEventListener('dblclick', () => { close(true); goTo(p.n) })
+    el.addEventListener('dragstart', e => {
+      moving = sel.has(p) ? pages.filter(x => sel.has(x)) : [p]
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', String(p.n))
+      requestAnimationFrame(() => grid.querySelectorAll('.ocard').forEach((c, k) => c.classList.toggle('dragging', moving.includes(pages[k]))))
+    })
+    el.addEventListener('dragover', e => {
+      if (!moving) return
+      e.preventDefault()
+      const r = el.getBoundingClientRect()
+      const after = e.clientX > r.left + r.width / 2
+      grid.querySelectorAll('.before, .after').forEach(c => c.classList.remove('before', 'after'))
+      el.classList.add(after ? 'after' : 'before')
+    })
+    el.addEventListener('drop', e => {
+      e.preventDefault()
+      if (!moving || moving.includes(p)) return
+      const after = el.classList.contains('after')
+      const rest = pages.filter(x => !moving.includes(x))
+      const at = rest.indexOf(p) + (after ? 1 : 0)
+      pages = [...rest.slice(0, at), ...moving, ...rest.slice(at)]
+      draw()
+    })
+    el.addEventListener('dragend', () => { moving = null; draw() })
+    return el
+  }
+  function draw() {
+    grid.replaceChildren(...pages.map(card))
+    const gone = S.pages.length - pages.length
+    info.textContent = tr(`${pages.length} pagini`) + (gone ? tr(` · ${gone} șterse`) : '') + (sel.size ? tr(` · ${sel.size} selectate`) : '')
+    saveBtn.disabled = !changedO()
+    for (const b of [delBtn, rotLBtn, rotRBtn]) b.disabled = !sel.size
+    resetBtn.disabled = !changedO()
+  }
+  async function commit() {
+    if (!changedO()) return
+    saveBtn.disabled = true
+    saveBtn.textContent = tr('Se salvează…')
+    const source = PATH
+    try {
+      const r = await post('organize', { path: PATH, pages: pages.map(p => ({ n: p.n, rot: p.rot })) })
+      close(true)
+      await openDoc(r.out, 1)
+      toast(`Paginile sunt salvate: ${base(r.out)}`, { action: { label: 'Anulează', fn: () => undo(r.out, source) } })
+    } catch (err) {
+      saveBtn.textContent = tr('Salvează')
+      saveBtn.disabled = false
+      toast(err.message, { err: true, ms: 8000 })
+    }
+  }
+  function keys(e) {
+    if (!back.isConnected) return
+    const k = e.key.toLowerCase()
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); return close() }
+    if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); e.stopPropagation(); return commit() }
+    if ((e.ctrlKey || e.metaKey) && k === 'a') { e.preventDefault(); e.stopPropagation(); pages.forEach(p => sel.add(p)); return draw() }
+    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); e.stopPropagation(); return removePages([...sel]) }
+    e.stopPropagation() // celelalte scurtături ale editorului nu merg cât e deschis ecranul ăsta
+  }
+  addEventListener('keydown', keys, true)
+  document.body.append(back)
+  draw()
+}
+
+// ---------- căutarea globală (Ctrl+K) ----------
+// O singură căsuță pentru tot: acțiunile editorului, uneltele din catalog și, dacă Stirling e instalat, toate uneltele lui.
+function paletteItems() {
+  const act = (label, run, ic, key, keywords = '') => ({ label, run, ic, key, keywords, group: 'Editor' })
+  const items = [
+    act('Selectează și mută', () => setTool('select'), 'pointer', 'V'),
+    act('Semnătură olografă', () => setTool('sig'), 'sig', 'S', 'semnatura imagine'),
+    act('Adaugă text', () => setTool('text'), 'type', 'T', 'scrie'),
+    act('Editează textul din PDF', () => setTool('edit'), 'edit', 'E', 'modifica rescrie'),
+    act(`Comentariu pentru ${aiName()}`, () => setTool('comment'), 'comment', 'C', 'ai claude'),
+    act(`Captură zonă pentru ${aiName()}`, () => setTool('region'), 'region', 'R', 'ai claude'),
+    act('Semnătură electronică', openCertSign, null, '', 'certificat cei buletin token fintaxysign stick digitala calificata'),
+    act('Semnează mai multe PDF-uri', openBulkSign, null, '', 'bloc bulk lot certificat'),
+    act('Semnătură nouă în bibliotecă', openUpload, 'sig', '', 'adauga poza scan'),
+    act('Salvează', () => save(), null, 'Ctrl+S'),
+    act('Deschide alt PDF', () => openOther(), 'open', 'Ctrl+O'),
+    act('Organizează paginile', openOrganize, 'pages', 'P', 'ordoneaza muta sterge pagini reordoneaza organize'),
+    act('Rotește pagina spre dreapta', () => rotate(90, false), 'rotR'),
+    act('Rotește pagina spre stânga', () => rotate(-90, false), 'rotL'),
+    act('Rotește toate paginile spre dreapta', () => rotate(90, true), 'rotR'),
+    act('Mărește', () => stepZoom(1), 'plus', '', 'zoom'),
+    act('Micșorează', () => stepZoom(-1), 'minus', '', 'zoom'),
+    act('Potrivește lățimea', () => setZoom(1), null, '', 'zoom 100'),
+    act('Comentariile', openCommentsList, 'comment'),
+    act('Arată în Explorer', () => post('open', { path: PATH, how: 'explorer' }), 'folder', '', 'folder'),
+    act('Copiază calea fișierului', () => $('#btnCopyPath').click(), 'copy'),
+    act('Toate uneltele PDF', () => openTools(), 'grid'),
+  ]
+  const groups = Object.fromEntries(GROUPS.map(g => [g.id, g.label]))
+  for (const t of toolsCatalog()) {
+    if (t.native === 'edit' || ['certsign', 'bulksign', 'organize'].includes(t.id)) continue // sunt deja la acțiuni
+    items.push({ label: t.label, desc: t.desc, group: groups[t.group] || '', tool: t, keywords: t.endpoint || '',
+      run: () => (t.native ? setTool(t.native) : openToolForm(t)) })
+  }
+  if (S.specData) {
+    const known = new Set(TOOLS.map(t => t.endpoint))
+    for (const [ep, s] of Object.entries(S.specData.tools)) {
+      if (known.has(ep) || /text-editor|pipeline/.test(ep)) continue
+      const t = { id: ep, label: s.summary || ep, endpoint: ep, desc: ep.replace('/api/v1/', ''), suffix: ep.split('/').pop() }
+      items.push({ label: t.label, desc: t.desc, group: 'Stirling', tool: t, keywords: ep, run: () => openToolForm(t) })
+    }
+  }
+  return items
+}
+function paletteScore(it, q) {
+  if (!q) return 1
+  const label = norm(tr(it.label)), ro = norm(it.label)
+  const rest = norm(`${it.desc || ''} ${tr(it.desc || '')} ${it.group} ${it.keywords}`)
+  const words = q.split(/\s+/).filter(Boolean)
+  let score = 0
+  for (const w of words) {
+    if (label.startsWith(w) || ro.startsWith(w)) score += 30
+    else if (new RegExp(`(^|[\\s(/-])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(`${label} ${ro}`)) score += 20
+    else if (label.includes(w) || ro.includes(w)) score += 10
+    else if (rest.includes(w)) score += 3
+    else return 0 // fiecare cuvânt trebuie să se potrivească undeva
+  }
+  return score
+}
+function openPalette() {
+  if ($('#palette')) return $('#palette input').focus()
+  closePop()
+  $('#sigFlyout').hidden = true
+  const input = h('input', { placeholder: 'Caută o unealtă sau o acțiune (ex. semnătură, comprimă, rotește)', spellcheck: 'false' })
+  const list = h('div', { class: 'plist' })
+  const back = h('div', { class: 'palette-back', id: 'palette' },
+    h('div', { class: 'palette' }, h('label', { class: 'psearch' }, icon('search'), input, h('kbd', {}, 'Esc')), list))
+  let shown = []
+  let cur = 0
+  const close = () => back.remove()
+  const runAt = i => {
+    const it = shown[i]
+    if (!it) return
+    close()
+    it.run()
+  }
+  const mark = () => {
+    list.querySelectorAll('.prow').forEach((el, i) => el.classList.toggle('on', i === cur))
+    list.querySelector('.prow.on')?.scrollIntoView({ block: 'nearest' })
+  }
+  const draw = () => {
+    const q = norm(input.value.trim())
+    shown = paletteItems().map(it => ({ it, s: paletteScore(it, q) })).filter(x => x.s > 0)
+      .sort((a, b) => b.s - a.s).slice(0, 60).map(x => x.it)
+    cur = 0
+    list.replaceChildren(...shown.map((it, i) => {
+      let ic
+      if (it.tool) {
+        const tpl = document.createElement('template')
+        tpl.innerHTML = toolIconSvg(it.tool)
+        ic = tpl.content.firstChild
+      } else {
+        ic = it.ic ? icon(it.ic) : icon('tool')
+      }
+      const row = h('button', { class: 'prow', type: 'button', title: it.desc || '' }, ic,
+        h('span', { class: 'pl' }, it.label), h('span', { class: 'pg' }, it.group), it.key ? h('kbd', {}, it.key) : null)
+      row.addEventListener('mousemove', () => { if (cur !== i) { cur = i; mark() } })
+      row.addEventListener('click', () => runAt(i))
+      return row
+    }))
+    if (!shown.length) list.append(h('div', { class: 'empty' }, 'Nimic găsit.'))
+    mark()
+  }
+  input.addEventListener('input', draw)
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); return close() }
+    if (e.key === 'ArrowDown') { e.preventDefault(); cur = Math.min(shown.length - 1, cur + 1); return mark() }
+    if (e.key === 'ArrowUp') { e.preventDefault(); cur = Math.max(0, cur - 1); return mark() }
+    if (e.key === 'Enter') { e.preventDefault(); return runAt(cur) }
+  })
+  back.addEventListener('pointerdown', e => { if (e.target === back) close() })
+  document.body.append(back)
+  draw()
+  input.focus()
+  // Uneltele Stirling apar în listă când răspunde (dacă e instalat); până atunci, catalogul.
+  if (!S.specData) loadSpec().then(spec => { S.specData = spec; if (back.isConnected) draw() }).catch(() => {})
+}
+
 // ---------- tastatură, butoane, pornire ----------
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); return }
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); return }
+  if ($('#palette')) return // tastele merg în căutare
   if (e.key === 'Escape') {
     if (S.pop) return closePop()
     if (!$('#sigFlyout').hidden) { $('#sigFlyout').hidden = true; return }
@@ -1424,6 +1772,7 @@ document.addEventListener('keydown', e => {
   }
   if (typing()) return
   if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel && S.sel.type !== 'edit' && S.sel.type !== 'field') return removeItem(S.sel)
+  if (e.key.toLowerCase() === 'p' && !e.ctrlKey && !e.metaKey && !e.altKey) return openOrganize()
   const keys = { v: 'select', s: 'sig', t: 'text', e: 'edit', c: 'comment', r: 'region' }
   if (keys[e.key.toLowerCase()] && !e.ctrlKey && !e.metaKey && !e.altKey) setTool(keys[e.key.toLowerCase()])
 })
@@ -1445,6 +1794,9 @@ for (const b of document.querySelectorAll('.rail [data-tool]')) {
     setTool(b.dataset.tool)
   })
 }
+const orgBtn = document.querySelector('.rail [data-panel=organize]')
+orgBtn.append(icon('pages'))
+orgBtn.addEventListener('click', () => openOrganize())
 const toolsBtn = document.querySelector('.rail [data-panel=tools]')
 toolsBtn.append(icon('grid'))
 toolsBtn.addEventListener('click', () => ($('#drawer').hidden || !toolsBtn.classList.contains('on') ? openTools() : closeDrawer()))
@@ -1466,6 +1818,8 @@ $('#rotR').addEventListener('click', e => rotate(90, e.shiftKey))
 $('#zpct').addEventListener('click', () => setZoom(1))
 $('#btnSave').addEventListener('click', () => save())
 $('#btnCert').addEventListener('click', () => openCertSign())
+$('#btnSearch').append(icon('search'))
+$('#btnSearch').addEventListener('click', () => openPalette())
 $('#btnComments').addEventListener('click', () => ($('#drawer').hidden ? openCommentsList() : closeDrawer()))
 $('#btnCopyPath').addEventListener('click', async () => {
   const p = S.doc?.path || PATH

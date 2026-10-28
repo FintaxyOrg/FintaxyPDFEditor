@@ -473,6 +473,35 @@ def stamp(pdf: Path, items: list, sigs: list, rotate: dict | None = None) -> Pat
     return target
 
 
+def organize(pdf: Path, pages: list) -> Path:
+    """Paginile în ordinea nouă: pages = [{n, rot}] (n = numărul de acum, rot = cât se mai rotește, ±90/180).
+    Ce lipsește din listă se șterge. Rezultatul e copia _editat.pdf (Anulează pune la loc ce era)."""
+    if not pages:
+        raise ValueError("Trebuie să rămână cel puțin o pagină.")
+    doc = fitz.open(stream=pdf.read_bytes(), filetype="pdf")
+    if is_signed(doc):
+        raise ValueError("PDF-ul are semnătură digitală; reordonarea paginilor ar strica-o.")
+    order = [int(p["n"]) - 1 for p in pages]
+    if len(set(order)) != len(order) or any(not 0 <= i < len(doc) for i in order):
+        raise ValueError("Lista de pagini nu se potrivește cu PDF-ul.")
+    target = output_path(pdf, signed=False)
+    bak = backup_path(target)
+    if target.exists():
+        shutil.copy2(target, bak)
+    elif bak.exists():
+        bak.unlink()
+    doc.select(order)
+    for i, p in enumerate(pages):
+        if int(p.get("rot") or 0) % 360:
+            page = doc[i]
+            page.set_rotation((page.rotation + int(p["rot"])) % 360)
+    tmp = target.with_name(f".{target.stem}.tmp.pdf")
+    doc.save(str(tmp), garbage=3, deflate=True)
+    doc.close()
+    os.replace(tmp, target)
+    return target
+
+
 def undo_file(pdf: str) -> dict:
     target = Path(pdf)
     bak = backup_path(target)

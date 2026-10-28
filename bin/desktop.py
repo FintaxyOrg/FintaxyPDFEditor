@@ -74,19 +74,27 @@ def pick_pdf(initial: str = "") -> str:
     return p
 
 
-def pick_pdfs(initial: str = "") -> list:
-    """Mai multe PDF-uri deodată (Ctrl/Shift + click), pentru semnarea în bloc."""
+PICK_KINDS = {  # ce se poate alege la „Adaugă fișiere”: semnarea în bloc, unirea, imaginile, documentele Office
+    "pdf": (("Documente PDF", "PDF documents"), "*.pdf"),
+    "image": (("Imagini", "Images"), "*.jpg *.jpeg *.png *.bmp *.gif *.tif *.tiff *.webp"),
+    "office": (("Word, Excel, PowerPoint", "Word, Excel, PowerPoint"), "*.doc *.docx *.rtf *.odt *.txt *.xls *.xlsx *.csv *.ods *.ppt *.pptx *.odp"),
+}
+
+
+def pick_pdfs(initial: str = "", kind: str = "pdf") -> list:
+    """Mai multe fișiere deodată (Ctrl/Shift + click): PDF-uri, imagini sau documente Office."""
     import tkinter as tk
     from tkinter import filedialog
     folder = initial if initial and os.path.isdir(initial) else settings().get("lastDir", "")
+    (ro, en_label), pattern = PICK_KINDS.get(kind, PICK_KINDS["pdf"])
     with _PICK:
         root = tk.Tk()
         root.withdraw()
         root.attributes("-topmost", True)
         try:
             en = english()
-            ps = filedialog.askopenfilenames(parent=root, title="Choose the PDFs to sign" if en else "Alege PDF-urile de semnat",
-                                             initialdir=folder or None, filetypes=[("PDF documents" if en else "Documente PDF", "*.pdf")])
+            ps = filedialog.askopenfilenames(parent=root, title="Choose the files" if en else "Alege fișierele",
+                                             initialdir=folder or None, filetypes=[(en_label if en else ro, pattern)])
         finally:
             root.destroy()
     ps = [str(Path(p)) for p in ps or []]

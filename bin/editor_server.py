@@ -615,7 +615,7 @@ def run_tool(body: dict) -> dict:
         except ValueError:
             pass
         if r.status_code == 403 and "disabled" in str(msg):
-            raise RuntimeError("Unealta e dezactivată în Stirling: îi lipsește un program extern (PDF → CBR cere WinRAR).")
+            raise RuntimeError(f"Unealta e dezactivată în Stirling: îi lipsește un program extern ({missing_program(endpoint)}).")
         raise RuntimeError(f"Stirling a răspuns {r.status_code}: {msg}")
     if ctype == "application/json":
         try:
@@ -649,6 +649,17 @@ def run_tool(body: dict) -> dict:
     tmp.write_bytes(r.content)
     os.replace(tmp, target)
     return {"ok": True, "kind": "pdf" if ext == ".pdf" else "file", "out": str(target)}
+
+
+def missing_program(endpoint: str) -> str:
+    """Programul extern de care are nevoie o unealtă Stirling dezactivată (după adresa ei)."""
+    for pattern, prog in ((r"cbr", "PDF → CBR cere WinRAR"), (r"ocr", "OCR cere Tesseract și OCRmyPDF"),
+                          (r"ebook|epub", "eBook cere Calibre"), (r"html/pdf|url/pdf|markdown/pdf", "HTML → PDF cere WeasyPrint"),
+                          (r"pdf/(word|presentation|text|xlsx|html|xml)|file/pdf|pdfa", "conversia cere LibreOffice"),
+                          (r"compress|vector", "cere Ghostscript și qpdf"), (r"svg|img", "cere ImageMagick")):
+        if re.search(pattern, endpoint):
+            return prog
+    return "vezi Stirling → Setări → programe externe"
 
 
 def store_certs() -> list:
@@ -869,7 +880,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.json(store_certs() if q.get("quick") else windows_certs())
             if path == "/api/info":
                 import desktop
-                info = {"ok": True, "standalone": STANDALONE, "lang": desktop.settings().get("lang", "ro"), "library": LIB}
+                info = {"ok": True, "standalone": STANDALONE, "lang": desktop.settings().get("lang", "ro"), "library": LIB,
+                        "stirling": bool(Stirling.install_dir())}
                 if STANDALONE:
                     info.update(apps=desktop.APPS, ai=desktop.current_ai())
                 return self.json(info)
@@ -904,6 +916,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                        "edits": sum(1 for it in items if it.get("type") == "edit"),
                        "rotated": len(rot["pages"]) if rot else 0,
                        "page": int(items[0]["page"]) if items else int(rot["pages"][0]) if rot else 1}
+                event("saved", source=str(src), **{k: v for k, v in res.items() if k != "ok"})
+                return self.json(res)
+            if path == "/api/organize":
+                # Ecranul „Organizează paginile”: ordinea nouă, paginile șterse și rotite, scrise o dată.
+                with LOCK:
+                    src = Path(b["path"])
+                    target = fx_sign.organize(src, b.get("pages") or [])
+                    _docs.pop(str(target).lower(), None)
+                res = {"ok": True, "out": str(target), "sigs": [], "texts": 0, "edits": 0, "rotated": 0, "page": 1,
+                       "pages": len(b["pages"])}
                 event("saved", source=str(src), **{k: v for k, v in res.items() if k != "ok"})
                 return self.json(res)
             if path == "/api/undo":
@@ -955,7 +977,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.json({"ok": True, "path": p})
             if path == "/api/pickmany":
                 import desktop
-                return self.json({"ok": True, "paths": desktop.pick_pdfs(str(Path(b["dir"])) if b.get("dir") else "")})
+                return self.json({"ok": True, "paths": desktop.pick_pdfs(str(Path(b["dir"])) if b.get("dir") else "", b.get("kind") or "pdf")})
+            if path == "/api/local":
+                # Uneltele făcute în aplicație (bin/localtools.py), fără Stirling.
+                import localtools
+                with LOCK:
+                    res = localtools.run(b["tool"], b.get("path") or "", b.get("fields") or {})
+                if res.get("out") and res.get("kind") in ("pdf", "file", "folder"):
+                    event("tool", source=b.get("path") or "", out=res["out"], tool=b.get("label") or b["tool"], kind=res["kind"])
+                return self.json(res)
             if path == "/api/certsign":
                 # Un fișier sau mai multe (semnarea în bloc), cu o singură deschidere a cheii: PIN-ul o dată.
                 import certsign

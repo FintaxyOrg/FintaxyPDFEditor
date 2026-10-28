@@ -6,7 +6,10 @@ Aplicație Windows pentru semnat și editat PDF-uri:
 - **semnătură electronică (calificată)** cu certificatul din Windows: buletinul electronic, un token sau stick-ul din birou prin **FintaxySign**; și **mai multe PDF-uri deodată**, cu un singur PIN;
 - **formulare**: completezi câmpurile direct pe pagină;
 - **PDF-uri ANAF** (formulare XFA cu XML atașat): le citești, deschizi XML-ul și le semnezi în câmpul „Semnătura”;
-- text nou sau corectat, rotire, comentarii pentru un AI și, dacă e instalat Stirling PDF, uneltele PDF (comprimare, OCR, unire, împărțire etc.).
+- **organizarea paginilor**: miniaturi pe care le tragi în altă ordine, le ștergi sau le rotești (tasta **P**);
+- **unelte PDF direct în aplicație**: unire, împărțire, extragere și ștergere de pagini, comprimare, PDF → Word / Excel / imagini / text, imagini → PDF, Word / Excel → PDF (cu Microsoft Office), parolă, watermark, numere de pagină, aplatizare, validarea semnăturii, reparare;
+- **căutare globală Ctrl+K**: orice unealtă sau acțiune, scrisă cu sau fără diacritice;
+- text nou sau corectat, comentarii pentru un AI și, dacă e instalat Stirling PDF, încă ~50 de unelte rare (OCR, conversii exotice).
 
 ## Pentru contabili: instalare
 
@@ -49,9 +52,21 @@ Un PDF deja semnat (de exemplu o declarație semnată de alt administrator) prim
 - **Formular cu câmpuri**: câmpurile apar evidențiate pe pagină; le completezi și apeși **Salvează** (`<nume>_editat.pdf`).
 - **Declarații ANAF** (D100, D112, D300 etc., formulare XFA): se văd ca în Adobe; deasupra apare XML-ul atașat, cu **Deschide** și **Arată în folder** (se salvează în `<nume> - atasamente`). Datele se completează în programul ANAF (Soft J / DUKIntegrator) sau în Adobe Reader; aici le citești și le semnezi.
 
-### Unelte PDF (opțional)
+### Unelte PDF
 
-Instalează [Stirling PDF](https://www.stirlingpdf.com/) pentru Windows (sau `winget install --id StirlingTools.StirlingPDF -e`). PDF Sign îl pornește singur, în fundal. Semnătura electronică nu are nevoie de Stirling.
+Butonul cu pătrățele din stânga (sau **Ctrl+K**) arată toate uneltele. Cele obișnuite merg direct, fără nimic instalat; rezultatul apare lângă PDF, cu un sufix (`_unit`, `_comprimat`, `_word.docx` etc.). Word / Excel → PDF are nevoie de Microsoft Office.
+
+Uneltele marcate **Stirling** (OCR, conversii rare) au nevoie de [Stirling PDF](https://www.stirlingpdf.com/) instalat (`winget install --id StirlingTools.StirlingPDF -e`); PDF Sign îl pornește singur, în fundal.
+
+### Scurtături
+
+| Tastă | Ce face |
+|---|---|
+| Ctrl+K | caută orice unealtă |
+| P | organizează paginile |
+| S / T / E | semnătură olografă / text / editează textul |
+| C / R | comentariu / captură de zonă pentru AI |
+| Ctrl+S / Ctrl+O | salvează / deschide alt PDF |
 
 ### Actualizare și dezinstalare
 
@@ -64,7 +79,7 @@ Instalează [Stirling PDF](https://www.stirlingpdf.com/) pentru Windows (sau `wi
 
 | Folder | Ce e |
 |---|---|
-| `bin/` | aplicația, în Python: `desktop.py` (pornirea, ferestrele, AI), `editor_server.py` (serverul local al editorului, Stirling), `fx_sign.py` (scrierea în PDF cu PyMuPDF, formulare), `certsign.py` (semnătura electronică: pyHanko + cheia din Windows prin PowerShell), `signature_transparent.py` (fundal transparent la semnături) |
+| `bin/` | aplicația, în Python: `desktop.py` (pornirea, ferestrele, AI), `editor_server.py` (serverul local al editorului, Stirling), `fx_sign.py` (scrierea în PDF cu PyMuPDF, formulare), `certsign.py` (semnătura electronică: pyHanko + cheia din Windows prin PowerShell), `localtools.py` (uneltele PDF fără Stirling), `signature_transparent.py` (fundal transparent la semnături) |
 | `editor/` | interfața (HTML, CSS, JS), servită de `editor_server.py` pe 127.0.0.1 cu token |
 | `app/` | `build.ps1` (versiunea portabilă), `install.ps1` + `Instalare.cmd` / `Dezinstalare.cmd`, iconița |
 | `hooks/`, `types/`, `.claude-plugin/` | mod-ul pentru Claude Code (cardul de sub PDF-uri din chat); nu e necesar pentru aplicație. `.claude-plugin/marketplace.json` face din repo un marketplace |
