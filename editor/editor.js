@@ -133,7 +133,9 @@ async function openDoc(path, page) {
   S.items = []
   S.sel = null
   S.runs = {}
+  S.fields = {}
   buildPages()
+  renderDocBar()
   layout()
   dirty()
   await loadComments()
@@ -152,6 +154,7 @@ function buildPages() {
       const p = S.pages[+en.target.dataset.n - 1]
       loadImg(p)
       if (S.tool === 'edit') ensureRuns(p)
+      if (S.doc.fields) ensureFields(p)
     }
   }, { root: main, rootMargin: '800px 0px' })
   S.pages = S.doc.pages.map((pg, i) => {
@@ -186,6 +189,8 @@ function layout() {
   }
   S.items.forEach(place)
   S.comments.forEach(placeComment)
+  const bar = $('#docbar')
+  if (bar) bar.style.width = `${Math.max(320, maxW * S.scale)}px`
   sizeGhost()
   $('#zpct').textContent = `${Math.round(S.zoom * 100)}%`
   positionPop()
@@ -239,8 +244,10 @@ const HINTS = {
   edit: 'Click pe orice rând din PDF și rescrie-l · Enter = gata · Esc = renunți',
   comment: 'Click pe pagină unde vrei să-i spui ceva lui Claude',
   region: 'Trage un dreptunghi peste zona pe care vrei s-o trimiți lui Claude',
+  sigbox: 'Trage un dreptunghi unde vrei semnătura electronică · Esc = renunți',
 }
 function setTool(t) {
+  if (S.boxPick && t !== 'sigbox') { const cb = S.boxPick; S.boxPick = null; cb(null) }
   S.tool = t
   document.body.dataset.tool = t
   for (const b of document.querySelectorAll('.rail [data-tool]')) b.classList.toggle('on', b.dataset.tool === t)
@@ -320,7 +327,8 @@ function sizeGhost() {
 
 // ---------- elementele puse pe pagină ----------
 function changed() {
-  return S.items.filter(it => (it.type === 'sig') || (it.type === 'text' && it.text.trim()) || (it.type === 'edit' && it.text !== it.orig))
+  return S.items.filter(it => (it.type === 'sig') || (it.type === 'text' && it.text.trim()) || (it.type === 'edit' && it.text !== it.orig) ||
+    (it.type === 'field' && it.value !== it.orig))
 }
 function dirty() {
   const n = changed().length
@@ -378,6 +386,7 @@ function renderItem(it) {
 function place(it) {
   const k = S.scale
   if (it.type === 'edit') return placeEdit(it)
+  if (it.type === 'field') return placeField(it)
   it.el.style.left = `${it.x * k}px`
   it.el.style.top = `${it.y * k}px`
   if (it.type === 'sig') {
@@ -406,6 +415,63 @@ window.addEventListener('pointermove', e => {
   place(drag.it)
 })
 window.addEventListener('pointerup', () => { drag = null })
+
+// ---------- câmpurile formularului ----------
+// Câmpurile PDF-ului (text, bife, liste) se completează direct pe pagină; Salvează le scrie în PDF.
+// Cele doar de citit rămân transparente: pagina de dedesubt arată deja valoarea lor.
+async function ensureFields(p) {
+  if (S.fields[p.n]) return
+  S.fields[p.n] = true
+  const doc = S.doc
+  try {
+    const list = await api('fields', { path: PATH, n: p.n })
+    if (doc !== S.doc) return
+    for (const f of list) {
+      const it = { ...f, type: 'field', page: p.n, orig: f.value, id: ++S.uid }
+      S.items.push(it)
+      renderField(it)
+    }
+  } catch (err) {
+    S.fields[p.n] = false
+    toast(`Nu am putut citi câmpurile de pe pagina ${p.n}: ${err.message}`, { err: true })
+  }
+}
+function renderField(it) {
+  const p = S.pages[it.page - 1]
+  const off = it.readonly || S.doc.signed
+  const title = it.label || it.name
+  let el
+  if (it.kind === 'check' || it.kind === 'radio') {
+    el = h('input', { type: 'checkbox', class: 'ffield chk', title, disabled: off, checked: !!it.value })
+    el.addEventListener('change', () => {
+      it.value = el.checked
+      // butoanele radio cu același nume: doar unul bifat
+      if (it.kind === 'radio' && el.checked) {
+        for (const o of S.items) if (o !== it && o.type === 'field' && o.kind === 'radio' && o.name === it.name) { o.value = false; o.el.checked = false }
+      }
+      dirty()
+    })
+  } else if (it.kind === 'combo' || it.kind === 'list') {
+    el = h('select', { class: 'ffield', title, disabled: off }, h('option', { value: '' }, ''),
+      ...it.options.map(o => h('option', { value: o, selected: o === it.value }, o)))
+    el.addEventListener('change', () => { it.value = el.value; el.classList.toggle('changed', it.value !== it.orig); dirty() })
+  } else {
+    el = h(it.multiline ? 'textarea' : 'input', { class: 'ffield', title, disabled: off, maxlength: it.maxlen || null, spellcheck: 'false' })
+    el.value = it.value
+    el.addEventListener('input', () => { it.value = el.value; el.classList.toggle('changed', it.value !== it.orig); dirty() })
+  }
+  el.addEventListener('pointerdown', e => e.stopPropagation())
+  it.el = el
+  p.layer.append(el)
+  placeField(it)
+}
+function placeField(it) {
+  const k = S.scale
+  const [x0, y0, x1, y1] = it.rect
+  const hgt = y1 - y0
+  Object.assign(it.el.style, { left: `${x0 * k}px`, top: `${y0 * k}px`, width: `${(x1 - x0) * k}px`, height: `${hgt * k}px`,
+    fontSize: `${(it.fs || Math.max(6, Math.min(11, it.multiline ? 10 : hgt * 0.62))) * k}px` })
+}
 
 // ---------- editarea textului existent ----------
 async function ensureRuns(p) {
@@ -546,7 +612,7 @@ function placeEdit(it) {
 
 // ---------- click-uri pe pagină ----------
 main.addEventListener('click', e => {
-  if (e.target.closest('.item, .pin, .editbox, .run')) return
+  if (e.target.closest('.item, .pin, .editbox, .run, .ffield, .docbar')) return
   const p = pageOf(e)
   if (!p) return
   const pt = ptAt(p, e)
@@ -586,7 +652,7 @@ main.addEventListener('pointerleave', () => { ghost.style.display = 'none' })
 // captură de zonă
 let zone = null
 main.addEventListener('pointerdown', e => {
-  if (S.tool !== 'region' || e.button !== 0 || e.target.closest('.pin')) return
+  if ((S.tool !== 'region' && S.tool !== 'sigbox') || e.button !== 0 || e.target.closest('.pin')) return
   const p = pageOf(e)
   if (!p) return
   e.preventDefault()
@@ -608,6 +674,14 @@ main.addEventListener('pointerup', () => {
   const z = zone
   zone = null
   if (!z.rect || (z.rect[2] - z.rect[0]) * S.scale < 10 || (z.rect[3] - z.rect[1]) * S.scale < 10) return z.el.remove()
+  if (S.tool === 'sigbox') {
+    // locul semnăturii electronice, ales din formularul de semnare
+    const cb = S.boxPick
+    S.boxPick = null
+    z.el.classList.add('sigzone')
+    setTool('select')
+    return cb ? cb({ p: z.p, rect: z.rect, el: z.el }) : z.el.remove()
+  }
   openDraft(z.p, { kind: 'region', rect: z.rect, zoneEl: z.el })
 })
 
@@ -930,14 +1004,15 @@ function fileToB64(file) {
 }
 
 async function openToolForm(t) {
+  if (t.custom === 'certsign') return openCertSign()
+  if (t.custom === 'bulksign') return openBulkSign()
   const body = h('div', { class: 'db' })
   const d = openDrawer(t.label, body)
   d.querySelector('.dh').prepend(h('button', { class: 'icon', title: 'Înapoi la unelte', onclick: () => openTools() }, icon('back')))
   body.append(h('div', { class: 'form' }, h('p', { class: 'desc' }, h('span', { class: 'spin' }), 'Încarc unealta din Stirling PDF…')))
   let spec
   try {
-    // Semnarea cu certificat are formularul ei: nu așteaptă lista de unelte (Stirling poate încă porni).
-    spec = t.custom === 'certsign' ? { fields: [] } : (await loadSpec()).tools[t.endpoint]
+    spec = (await loadSpec()).tools[t.endpoint]
   } catch (err) {
     return body.replaceChildren(h('div', { class: 'form' }, h('div', { class: 'result err' }, `Stirling PDF nu răspunde: ${err.message}`)))
   }
@@ -946,14 +1021,10 @@ async function openToolForm(t) {
   body.replaceChildren(form)
   form.append(h('p', { class: 'desc' }, t.desc || spec.description || spec.summary))
   if (changed().length && !t.noDoc) form.append(h('div', { class: 'warn' }, 'Ai modificări nesalvate. Unealta lucrează pe fișierul salvat; apasă întâi Salvează dacă vrei să le includă.'))
-  if (S.doc.signed && t.suffix && !['validatesign', 'removesign'].includes(t.id) && !t.noDoc && t.endpoint.includes('security/cert-sign')) {
-    form.append(h('div', { class: 'warn' }, 'PDF-ul are deja o semnătură digitală.'))
-  }
   const controls = []
   const mainName = spec.fields.find(f => f.name === 'fileInput' || f.name === 'file')?.name
   const extra = {}
-  if (t.custom === 'certsign') await certFields(form, controls)
-  else {
+  {
     for (const f of spec.fields) {
       if (f.name === 'fileId' || f.name === 'clientFileIds') continue
       const isFile = f.format === 'binary' || f.itemFormat === 'binary'
@@ -976,7 +1047,7 @@ async function openToolForm(t) {
     }
   }
   const result = h('div')
-  const go = h('button', { class: 'primary' }, t.custom === 'certsign' ? 'Semnează' : 'Rulează')
+  const go = h('button', { class: 'primary' }, 'Rulează')
   form.append(h('div', { class: 'buttons' }, go), result)
   go.addEventListener('click', async () => {
     const fields = {}
@@ -990,7 +1061,7 @@ async function openToolForm(t) {
     }
     if (t.noDoc && !Object.keys(files).length && !fields.urlInput) return result.replaceChildren(h('div', { class: 'result err' }, 'Alege fișierul de convertit.'))
     go.disabled = true
-    result.replaceChildren(h('div', { class: 'result' }, h('span', { class: 'spin' }), t.custom === 'certsign' ? 'Scrie PIN-ul de semnare în fereastra IDEMIA…' : 'Rulez unealta…'))
+    result.replaceChildren(h('div', { class: 'result' }, h('span', { class: 'spin' }), 'Rulez unealta…'))
     try {
       const firstFile = Object.values(files)[0]?.[0]?.name
       const r = await post('stirling/run', { path: PATH, endpoint: t.endpoint, fields, files, suffix: t.suffix || t.id, label: t.label,
@@ -1043,32 +1114,192 @@ function fieldControl(f, controls, t) {
   return h('label', { class: 'field' }, h('span', {}, label), el, help)
 }
 
-async function certFields(form, controls) {
-  form.append(h('div', { class: 'warn' }, 'Alege certificatul care se termină cu (Semnare), nu (Autentificare). După „Semnează” apare fereastra IDEMIA: scrie acolo PIN-ul de semnare (6 cifre). După semnare fișierul nu mai poate fi modificat.'))
+// ---------- semnătura electronică (certificat) ----------
+// Semnează prin Windows (bin/certsign.py), fără Stirling: buletinul electronic, un token sau stick-ul din birou
+// prin FintaxySign (cititor de card virtual). Windows cere PIN-ul în fereastra lui; la mai multe PDF-uri, o dată.
+const NO_CERT = 'Buletinul electronic: e în cititor? Stick-ul din birou: pornește FintaxySign și verifică să scrie „connected” și „Driver installed”, apoi apasă Reîncarcă.'
+function certPicker(form) {
   const sel = h('select', {}, h('option', { value: '' }, 'Se încarcă certificatele…'))
-  form.append(h('label', { class: 'field' }, h('span', {}, 'Certificat *'), sel))
-  // Întâi lista citită direct din Windows (instant), apoi cea a lui Stirling, care semnează (aceleași nume).
-  const fill = list => {
-    const keep = sel.value
-    sel.replaceChildren(...(list.length ? list : [{ alias: '', label: 'Nu văd niciun certificat: e buletinul în cititor?' }]).map(c =>
-      h('option', { value: c.alias, selected: keep ? c.alias === keep : /\(semnare\)/i.test(c.alias || '') }, c.label || `${c.alias}${c.notAfter ? ` · până la ${String(c.notAfter).slice(0, 10)}` : ''}${c.expired ? ' · EXPIRAT' : ''}`)))
+  const help = h('small', {})
+  const reload = h('button', { class: 'linkbtn', type: 'button' }, '↻ Reîncarcă')
+  form.append(h('label', { class: 'field' }, h('span', {}, 'Certificat *'), sel, help), h('div', {}, reload))
+  const load = async () => {
+    sel.replaceChildren(h('option', { value: '' }, 'Se încarcă certificatele…'))
+    help.textContent = ''
+    try {
+      const list = await api('certs')
+      if (!list.length) {
+        sel.replaceChildren(h('option', { value: '' }, 'Niciun certificat de semnare în Windows'))
+        help.textContent = tr(NO_CERT)
+        return
+      }
+      let last = ''
+      try { last = localStorage.getItem('fx-cert') || '' } catch { /* fără memorie, alegem primul */ }
+      sel.replaceChildren(...list.map(c => h('option', { value: c.thumb, disabled: c.expired }, c.label)))
+      const usable = list.filter(c => !c.expired)
+      sel.value = usable.some(c => c.thumb === last) ? last : usable[0]?.thumb || ''
+    } catch (err) {
+      sel.replaceChildren(h('option', { value: '' }, `Eroare: ${err.message}`))
+    }
   }
-  let real = false
-  api('stirling/certs', { quick: 1 }).then(list => { if (!real) fill(list) }).catch(() => {})
-  api('stirling/certs').then(list => { real = true; fill(list) })
-    .catch(err => { if (!sel.options.length || !sel.value) sel.replaceChildren(h('option', { value: '' }, `Eroare: ${err.message}`)) })
-  controls.push({ name: 'alias', read: () => sel.value }, { name: 'certType', read: () => 'WINDOWS_STORE' }, { name: 'showLogo', read: () => false })
-  const vis = h('input', { type: 'checkbox', checked: true })
-  form.append(h('label', { class: 'field' }, h('span', { class: 'check' }, vis, 'Semnătură vizibilă pe pagină')))
-  controls.push({ name: 'showSignature', read: () => vis.checked })
-  const page = h('input', { type: 'number', min: 1, max: S.pages.length, value: S.pages.length })
-  form.append(h('label', { class: 'field' }, h('span', {}, 'Pagina ștampilei'), page))
-  controls.push({ name: 'pageNumber', read: () => (vis.checked ? page.value : undefined) })
-  for (const [name, label] of [['reason', 'Motiv'], ['location', 'Locul']]) {
-    const inp = h('input', { type: 'text' })
+  reload.addEventListener('click', load)
+  sel.addEventListener('change', () => { try { localStorage.setItem('fx-cert', sel.value) } catch { /* nu e esențial */ } })
+  load()
+  return () => sel.value
+}
+function textInputs(form, ...names) {
+  return names.map(([label, ph]) => {
+    const inp = h('input', { type: 'text', placeholder: ph || '' })
     form.append(h('label', { class: 'field' }, h('span', {}, label), inp))
-    controls.push({ name, read: () => inp.value })
+    return inp
+  })
+}
+const PIN_WAIT = 'Scrie PIN-ul în fereastra Windows… Cu stick-ul din birou (FintaxySign), dacă e la un coleg, aștepți câteva secunde rândul.'
+
+function openCertSign() {
+  if (!S.doc) return
+  closePop()
+  const form = h('div', { class: 'form' })
+  const d = openDrawer('Semnătură electronică', h('div', { class: 'db' }, form))
+  form.append(h('p', { class: 'desc' }, 'Semnătură digitală calificată cu un certificat din Windows: buletinul electronic, un token sau stick-ul din birou (FintaxySign). Windows îți cere PIN-ul.'))
+  if (changed().length) form.append(h('div', { class: 'warn' }, 'Ai modificări nesalvate. Semnătura se pune pe fișierul salvat: apasă întâi Salvează.'))
+  if (S.doc.signed) form.append(h('div', { class: 'warn' }, 'PDF-ul are deja o semnătură; a ta se adaugă după ea, fără s-o strice.'))
+  const thumb = certPicker(form)
+  const empty = S.doc.sigfields.filter(f => !f.signed && f.visible)
+  const opts = [...empty.map(f => [`field:${f.name}`, `În câmpul de semnătură de pe pagina ${f.page}`]),
+    ['box', 'Aleg locul pe pagină (trag un dreptunghi)'], ['none', 'Invizibilă (se vede în panoul de semnături)']]
+  const where = h('select', {}, ...opts.map(([v, l]) => h('option', { value: v }, l)))
+  const boxInfo = h('small', {})
+  form.append(h('label', { class: 'field' }, h('span', {}, 'Unde apare semnătura'), where, boxInfo))
+  let box = null
+  const pick = () => {
+    d.hidden = true
+    toast('Trage un dreptunghi pe pagină unde vrei semnătura.')
+    S.boxPick = z => {
+      d.hidden = false
+      if (!z) { if (!box) where.value = 'none'; return }
+      box?.el.remove()
+      box = z
+      boxInfo.replaceChildren(tr(`Pe pagina ${z.p.n}.`) + ' ', h('button', { class: 'linkbtn', type: 'button', onclick: pick }, 'Alege alt loc'))
+    }
+    setTool('sigbox')
   }
+  where.addEventListener('change', () => {
+    if (where.value === 'box') return pick()
+    box?.el.remove()
+    box = null
+    boxInfo.replaceChildren()
+  })
+  const [reason, location] = textInputs(form, ['Motiv (opțional)'], ['Locul (opțional)', 'ex. București'])
+  const go = h('button', { class: 'primary' }, 'Semnează')
+  const result = h('div')
+  form.append(h('div', { class: 'buttons' }, go), result)
+  go.addEventListener('click', async () => {
+    const t = thumb()
+    if (!t) return result.replaceChildren(h('div', { class: 'result err' }, 'Alege certificatul.'))
+    let place = null
+    if (where.value.startsWith('field:')) place = { field: where.value.slice(6) }
+    else if (where.value === 'box') {
+      if (!box) return pick()
+      place = { page: box.p.n, rect: box.rect }
+    }
+    go.disabled = true
+    result.replaceChildren(h('div', { class: 'result' }, h('span', { class: 'spin' }), PIN_WAIT))
+    try {
+      const r = await post('certsign', { thumb: t, items: [{ path: PATH, place }], reason: reason.value, location: location.value })
+      const res = r.results[0]
+      if (!res?.ok) throw new Error(res?.error || 'Semnarea nu a reușit.')
+      box?.el.remove()
+      await openDoc(res.out, S.cur)
+      result.replaceChildren(showResult({ kind: 'pdf', out: res.out }))
+      toast(`Semnat electronic: ${base(res.out)}`)
+    } catch (err) {
+      result.replaceChildren(h('div', { class: 'result err' }, err.message))
+    } finally {
+      go.disabled = false
+    }
+  })
+}
+
+function openBulkSign() {
+  closePop()
+  const files = S.doc ? [S.doc.path] : []
+  const form = h('div', { class: 'form' })
+  openDrawer('Semnează mai multe PDF-uri', h('div', { class: 'db' }, form))
+  form.append(h('p', { class: 'desc' }, 'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN. Fiecare PDF e semnat în câmpul lui de semnătură gol (declarațiile ANAF, formularele) sau, dacă nu are, invizibil. Lângă fiecare apare <nume>_semnat.pdf.'))
+  const list = h('div', { class: 'blist' })
+  const add = h('button', { class: 'secondary', type: 'button' }, '+ Adaugă PDF-uri…')
+  const go = h('button', { class: 'primary' })
+  const draw = () => {
+    list.replaceChildren(...files.map((f, i) => h('div', { class: 'brow' }, h('span', { class: 'bn', title: f }, base(f)),
+      h('button', { class: 'linkbtn danger', type: 'button', onclick: () => { files.splice(i, 1); draw() } }, 'Scoate'))))
+    if (!files.length) list.append(h('div', { class: 'empty' }, 'Adaugă PDF-urile de semnat.'))
+    go.textContent = `${tr('Semnează toate')} (${files.length})`
+    go.disabled = !files.length
+  }
+  add.addEventListener('click', async () => {
+    try {
+      const r = await post('pickmany', { dir: S.doc?.dir || '' })
+      for (const p of r.paths) if (!files.some(f => f.toLowerCase() === p.toLowerCase())) files.push(p)
+      draw()
+    } catch (err) {
+      toast(err.message, { err: true })
+    }
+  })
+  form.append(h('div', { class: 'field' }, h('span', {}, 'Fișiere'), list, h('div', {}, add)))
+  const thumb = certPicker(form)
+  const [reason, location] = textInputs(form, ['Motiv (opțional)'], ['Locul (opțional)', 'ex. București'])
+  form.append(h('div', { class: 'warn' }, 'Cu stick-ul din birou (FintaxySign): apasă întâi „Reserve 2 min” în FintaxySign, ca să nu-l ia un coleg între fișiere (altfel PIN-ul se cere din nou).'))
+  const result = h('div')
+  form.append(h('div', { class: 'buttons' }, go), result)
+  draw()
+  go.addEventListener('click', async () => {
+    const t = thumb()
+    if (!t) return result.replaceChildren(h('div', { class: 'result err' }, 'Alege certificatul.'))
+    go.disabled = true
+    result.replaceChildren(h('div', { class: 'result' }, h('span', { class: 'spin' }), PIN_WAIT))
+    try {
+      const r = await post('certsign', { thumb: t, items: files.map(path => ({ path, place: 'auto' })), reason: reason.value, location: location.value })
+      const ok = r.results.filter(x => x.ok).length
+      const rows = r.results.map(x => h('div', { class: 'brow' }, h('span', { class: 'bn', title: x.out || x.path }, `${x.ok ? '✓' : '✗'} ${base(x.out || x.path)}`),
+        x.ok ? h('button', { class: 'linkbtn', type: 'button', onclick: () => post('open', { path: x.out, how: 'explorer' }) }, 'Explorer') : h('small', {}, x.error)))
+      const skipped = files.length - r.results.length
+      result.replaceChildren(h('div', { class: `result ${ok === files.length ? 'ok' : 'err'}` },
+        h('div', {}, `${ok} din ${files.length} semnate` + (skipped ? ` · ${skipped} nesemnate (semnarea a fost oprită)` : '')), ...rows))
+      const mine = r.results.find(x => x.ok && x.path.toLowerCase() === (S.doc?.path || '').toLowerCase())
+      if (mine) await openDoc(mine.out, S.cur)
+    } catch (err) {
+      result.replaceChildren(h('div', { class: 'result err' }, err.message))
+    } finally {
+      go.disabled = !files.length
+    }
+  })
+}
+
+// ---------- bara documentului: formulare XFA (ANAF), atașamente, câmp de semnătură gol ----------
+function renderDocBar() {
+  $('#docbar')?.remove()
+  const d = S.doc
+  const rows = []
+  if (d.xfa) {
+    rows.push(h('div', { class: 'row' }, h('b', {}, 'Formular inteligent (XFA)'),
+      h('span', {}, 'ca declarațiile ANAF. Îl poți citi și semna electronic aici; datele se completează în programul ANAF sau în Adobe Reader.')))
+  } else if (d.fields && !d.signed) {
+    rows.push(h('div', { class: 'row' }, h('b', {}, `Formular cu ${d.fields} câmpuri`), h('span', {}, 'completează-le direct pe pagină, apoi Salvează.')))
+  }
+  for (const a of d.attachments) {
+    const act = how => post('attachment', { path: PATH, key: a.key, how }).catch(err => toast(err.message, { err: true }))
+    rows.push(h('div', { class: 'row' }, h('b', {}, 'Atașat:'), h('span', { class: 'att' }, a.name),
+      h('span', { class: 'meta' }, a.size ? `${Math.max(1, Math.round(a.size / 1024))} KB` : ''),
+      h('button', { class: 'secondary', onclick: () => act('open') }, 'Deschide'),
+      h('button', { class: 'secondary', onclick: () => act('folder') }, 'Arată în folder')))
+  }
+  const empty = d.sigfields.filter(f => !f.signed && f.visible)
+  if (empty.length) {
+    rows.push(h('div', { class: 'row' }, h('b', {}, 'Câmp de semnătură gol'), h('span', {}, `pe pagina ${empty[0].page}.`),
+      h('button', { class: 'primary', onclick: openCertSign }, 'Semnează electronic')))
+  }
+  if (rows.length) main.prepend(h('div', { class: 'docbar', id: 'docbar' }, ...rows))
 }
 
 function showResult(r) {
@@ -1192,7 +1423,7 @@ document.addEventListener('keydown', e => {
     return setTool('select')
   }
   if (typing()) return
-  if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel && S.sel.type !== 'edit') return removeItem(S.sel)
+  if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel && S.sel.type !== 'edit' && S.sel.type !== 'field') return removeItem(S.sel)
   const keys = { v: 'select', s: 'sig', t: 'text', e: 'edit', c: 'comment', r: 'region' }
   if (keys[e.key.toLowerCase()] && !e.ctrlKey && !e.metaKey && !e.altKey) setTool(keys[e.key.toLowerCase()])
 })
@@ -1234,6 +1465,7 @@ $('#rotL').addEventListener('click', e => rotate(-90, e.shiftKey))
 $('#rotR').addEventListener('click', e => rotate(90, e.shiftKey))
 $('#zpct').addEventListener('click', () => setZoom(1))
 $('#btnSave').addEventListener('click', () => save())
+$('#btnCert').addEventListener('click', () => openCertSign())
 $('#btnComments').addEventListener('click', () => ($('#drawer').hidden ? openCommentsList() : closeDrawer()))
 $('#btnCopyPath').addEventListener('click', async () => {
   const p = S.doc?.path || PATH
@@ -1267,6 +1499,7 @@ function applyLang() {
   document.body.dataset.lang = lang()
   for (const el of document.querySelectorAll('[title]')) el.title = tr(el.title)
   $('#btnSave').textContent = tr($('#btnSave').textContent)
+  $('#btnCert').textContent = tr($('#btnCert').textContent)
   const b = $('#btnLang')
   b.textContent = lang() === 'en' ? 'RO' : 'EN'
   b.title = lang() === 'en' ? 'Treci pe română' : 'Switch to English'

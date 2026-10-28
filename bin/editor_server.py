@@ -71,11 +71,55 @@ def open_doc(path: str) -> fitz.Document:
 def doc_info(path: str) -> dict:
     with LOCK:
         doc = open_doc(path)
+        xfa = fx_sign.is_xfa(doc)
         return {
             "path": str(Path(path)), "name": Path(path).name, "dir": str(Path(path).parent),
             "pages": [{"w": p.rect.width, "h": p.rect.height, "rot": p.rotation} for p in doc],
-            "signed": doc.get_sigflags() > 0,
+            "signed": fx_sign.is_signed(doc),
+            "sigfields": fx_sign.signature_fields(doc),
+            # Formularele XFA (ANAF) se completează în programul lor: Adobe citește datele din XFA, nu din câmpuri.
+            "xfa": xfa, "fields": 0 if xfa else sum(1 for p in doc for w in p.widgets()
+                                                    if w.field_type in fx_sign.FIELD_KINDS and not w.field_flags & 1),
+            "attachments": attachments(doc),
         }
+
+
+def attachments(doc) -> list:
+    """Fișierele atașate PDF-ului (ex. XML-ul declarației ANAF): la nivelul documentului și pe pagini."""
+    items = []
+    for i, name in enumerate(doc.embfile_names()):
+        info = doc.embfile_info(name)
+        items.append({"key": f"e{i}", "name": info.get("filename") or name, "size": info.get("size") or info.get("length") or 0})
+    for page in doc:
+        for a in page.annots(types=[fitz.PDF_ANNOT_FILE_ATTACHMENT]):
+            info = a.file_info
+            items.append({"key": f"a{a.xref}", "name": info.get("filename") or f"atasament-{a.xref}", "size": info.get("size") or 0,
+                          "page": page.number + 1})
+    return items
+
+
+def save_attachment(path: str, key: str) -> str:
+    """Scoate atașamentul lângă PDF, în „<nume> - atasamente”, și dă calea lui."""
+    with LOCK:
+        doc = open_doc(path)
+        if key.startswith("e"):
+            name = doc.embfile_names()[int(key[1:])]
+            fname = doc.embfile_info(name).get("filename") or name
+            data = doc.embfile_get(name)
+        else:  # atașament pus pe o pagină (adnotare)
+            data, fname = None, ""
+            for page in doc:
+                for a in page.annots(types=[fitz.PDF_ANNOT_FILE_ATTACHMENT]):
+                    if f"a{a.xref}" == key:
+                        data, fname = a.get_file(), a.file_info.get("filename") or f"atasament-{a.xref}"
+            if data is None:
+                raise RuntimeError("Nu găsesc atașamentul.")
+    folder = Path(path).parent / f"{Path(path).stem} - atasamente"
+    folder.mkdir(exist_ok=True)
+    fname = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", Path(fname).name) or "atasament"
+    target = folder / fname
+    target.write_bytes(data)
+    return str(target)
 
 
 def page_png(path: str, n: int, width: int) -> bytes:
@@ -788,6 +832,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.send(200, "image/png", page_png(q["path"], int(q["n"]), int(q.get("w", 1600))), cache=True)
             if path == "/api/runs":
                 return self.json(page_runs(q["path"], int(q["n"])))
+            if path == "/api/fields":
+                with LOCK:
+                    return self.json(fx_sign.form_fields(open_doc(q["path"])[int(q["n"]) - 1]))
+            if path == "/api/certs":
+                import certsign
+                return self.json(certsign.list_certs())
             if path == "/api/font":
                 data, ctype = font_bytes(q["path"], q["ref"])
                 return self.send(200, ctype, data, cache=True) if data else self.send(404, "text/plain", b"")
@@ -903,6 +953,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 import desktop
                 p = desktop.pick_pdf(str(Path(b["dir"])) if b.get("dir") else "")
                 return self.json({"ok": True, "path": p})
+            if path == "/api/pickmany":
+                import desktop
+                return self.json({"ok": True, "paths": desktop.pick_pdfs(str(Path(b["dir"])) if b.get("dir") else "")})
+            if path == "/api/certsign":
+                # Un fișier sau mai multe (semnarea în bloc), cu o singură deschidere a cheii: PIN-ul o dată.
+                import certsign
+                certsign.FITZ_LOCK = LOCK
+                items = b.get("items") or [{"path": b["path"], "place": b.get("place")}]
+                results = certsign.sign_many(b["thumb"], items, b.get("reason") or "", b.get("location") or "")
+                for r in results:
+                    if r.get("ok"):
+                        event("tool", source=r["path"], out=r["out"], tool="Semnătură electronică", kind="pdf")
+                return self.json({"ok": True, "results": results})
+            if path == "/api/attachment":
+                out_path = save_attachment(b["path"], b["key"])
+                if b.get("how") == "open":
+                    os.startfile(out_path)  # noqa: S606 - XML-ul se deschide cu aplicația lui
+                else:
+                    subprocess.Popen(["explorer.exe", f"/select,{out_path}"])
+                return self.json({"ok": True, "out": out_path})
             if path == "/api/settings":
                 import desktop
                 desktop.save_settings(**{k: v for k, v in b.items() if k in ("ai", "lang")})

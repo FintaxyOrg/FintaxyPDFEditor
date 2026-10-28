@@ -86,7 +86,7 @@ const P = {
 
 const BY_ID = {
   edit: 'filePen', merge: 'files', compress: 'shrink', ocr: 'scanText', autoredact: 'eyeOff', replace: 'replace',
-  signature: 'signature', certsign: 'award', timestamp: 'clock', removesign: 'fileX', validatesign: 'shieldCheck',
+  signature: 'signature', certsign: 'award', bulksign: 'files', timestamp: 'clock', removesign: 'fileX', validatesign: 'shieldCheck',
   password: 'lock', permissions: 'key', unpassword: 'lockOpen', watermark: 'droplet', stamp: 'stamp', sanitize: 'sparkles',
   flatten: 'layers', unlockforms: 'formInput', redactareas: 'eraser',
   info: 'info', verifypdf: 'clipboardCheck', pdfa: 'archive', basic: 'fileText', props: 'list', fonts: 'type', secinfo: 'shield',

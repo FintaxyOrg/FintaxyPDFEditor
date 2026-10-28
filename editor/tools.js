@@ -31,7 +31,8 @@ export const TOOLS = [
   { id: 'replace', group: 'rec', label: 'Caută și înlocuiește', endpoint: A + 'general/edit-text', suffix: 'inlocuit', desc: 'Înlocuiește un text peste tot în document.' },
 
   { id: 'signature', group: 'sign', label: 'Semnătură olografă', native: 'sig', desc: 'Pune o semnătură din biblioteca ta pe pagină.' },
-  { id: 'certsign', group: 'sign', label: 'Semnează cu certificat (CEI)', endpoint: A + 'security/cert-sign', suffix: 'semnat', custom: 'certsign', desc: 'Semnătură digitală cu certificatul din Windows (buletinul electronic). PIN-ul îl scrii în fereastra IDEMIA.' },
+  { id: 'certsign', group: 'sign', label: 'Semnătură electronică (certificat)', endpoint: A + 'security/cert-sign', suffix: 'semnat', custom: 'certsign', desc: 'Semnătură digitală calificată cu certificatul din Windows: buletinul electronic, un token sau stick-ul din birou (FintaxySign).' },
+  { id: 'bulksign', group: 'sign', label: 'Semnează mai multe PDF-uri', custom: 'bulksign', desc: 'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN.' },
   { id: 'timestamp', group: 'sign', label: 'Marcă temporală', endpoint: A + 'security/timestamp-pdf', suffix: 'timestamp', desc: 'Adaugă o marcă temporală RFC 3161.' },
   { id: 'removesign', group: 'sign', label: 'Elimină semnătura digitală', endpoint: A + 'security/remove-cert-sign', suffix: 'fara-semnatura' },
   { id: 'validatesign', group: 'sign', label: 'Validează semnătura digitală', endpoint: A + 'security/validate-signature', desc: 'Cine a semnat și dacă fișierul e intact.' },

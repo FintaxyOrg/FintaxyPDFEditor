@@ -10,10 +10,8 @@ import { FLUENT } from './icons'
 // din aplicație; dacă panoul nu se poate deschide, într-o fereastră separată.
 // Un card desenat în afara casetei mesajului e tăiat de desktop, deci meniurile stau în card.
 
-const LIBRARY = String.raw`I:\Shared drives\FINTAXY HQ\01_Management\06_De Semnat\Semnaturi`
-const LOG = String.raw`C:\Users\Denis\AppData\Local\fintaxy-pdf-sign\mod-log.txt`
-// Helper-ul meniului de click dreapta, compilat de mod-ul path-buttons (bin/shellmenu.cs).
-const SHELLMENU = String.raw`C:\Users\Denis\AppData\Local\fintaxy-path-buttons\shellmenu.exe`
+// Biblioteca de semnături o alege helper-ul (settings.json sau Documente\Semnaturi PDF Sign), iar căile de pe
+// calculatorul ăsta (jurnalul, helper-ul de meniu) le dă `fx_sign.py paths`: mod-ul merge la oricine îl instalează.
 const BROWSER_SERVER = 'Claude_Browser'
 const MAX_PDFS = 6
 
@@ -95,11 +93,24 @@ async function log($: Engine, line: string) {
   logLines.push(`${new Date().toISOString()} ${line}`)
   if (logLines.length > 200) logLines.splice(0, logLines.length - 200)
   try {
-    await $.fs.write(LOG, logLines.join('\n') + '\n')
+    const { state } = await paths($)
+    if (state) await $.fs.write(`${state}\\mod-log.txt`, logLines.join('\n') + '\n')
   } catch {
     // jurnalul nu e esențial
   }
 }
+
+type Paths = { state: string; library: string; local: string }
+let pathsOnce: Promise<Paths> | undefined
+function paths($: Engine): Promise<Paths> {
+  pathsOnce ??= (helper($, ['paths']) as Promise<Paths>).catch(err => {
+    pathsOnce = undefined
+    throw err
+  })
+  return pathsOnce
+}
+// Helper-ul meniului de click dreapta, compilat de mod-ul path-buttons (bin/shellmenu.cs).
+const shellmenu = async ($: Engine) => `${(await paths($)).local}\\fintaxy-path-buttons\\shellmenu.exe`
 
 // ---------- helper-ul Python ----------
 
@@ -157,7 +168,7 @@ function loadThumbs($: Engine, force = false): Thumb[] | Loading {
   if (thumbs && !('error' in thumbs) && !stuck && !force) return thumbs
   thumbs = { isLoading: true }
   thumbsSince = Date.now()
-  void helper($, ['thumbs', LIBRARY])
+  void helper($, ['thumbs', ''])
     .then(r => {
       thumbs = Array.isArray(r) ? (r as Thumb[]) : { error: 'Biblioteca de semnături nu a putut fi citită.' }
     })
@@ -182,7 +193,7 @@ function ensureServer($: Engine): Promise<Server> {
       let ready = false
       let buf = ''
       try {
-        const child = $.process.spawn({ argv: ['python', '-u', script($), 'serve', LIBRARY], env: { PYTHONIOENCODING: 'utf-8' } })
+        const child = $.process.spawn({ argv: ['python', '-u', script($), 'serve', ''], env: { PYTHONIOENCODING: 'utf-8' } })
         for await (const { stream, text } of child) {
           if (stream !== 'stdout') {
             if (!ready) await log($, `server stderr: ${text.slice(0, 300)}`)
@@ -444,7 +455,7 @@ async function toggleMenu($: Engine, path: string) {
   if (isOpen) return
   let menu: Menu
   try {
-    const r = await $.process.run([SHELLMENU, 'list', path], { timeoutMs: 60000 })
+    const r = await $.process.run([await shellmenu($), 'list', path], { timeoutMs: 60000 })
     menu = r.exitCode === 0
       ? { isLoading: false, items: tidy(parseMenu(r.stdout)), expanded: [], error: '' }
       : { isLoading: false, items: [], expanded: [], error: r.stderr.trim() || `cod ${r.exitCode}` }
@@ -471,7 +482,7 @@ async function runItem($: Engine, path: string, item: MenuItem) {
   })
   $.ui.toast(`${item.text}…`)
   try {
-    const r = await $.process.run([SHELLMENU, 'invoke', path, item.key], { timeoutMs: 120000 })
+    const r = await $.process.run([await shellmenu($), 'invoke', path, item.key], { timeoutMs: 120000 })
     if (r.exitCode !== 0) $.ui.toast(`${item.text}: ${r.stderr.trim() || `cod ${r.exitCode}`}`)
   } catch (err) {
     $.ui.toast(`${item.text}: ${errText(err)}`)

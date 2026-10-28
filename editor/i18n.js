@@ -148,6 +148,39 @@ const EN = {
   'Interzice modificarea': 'Prevent modifying', 'Interzice adnotările': 'Prevent annotations', 'Interzice tipărirea': 'Prevent printing',
   'Interzice tipărirea fidelă': 'Prevent faithful printing', 'Convertește în PDF/A': 'Convert to PDF/A', 'Prag': 'Threshold',
   'Procent alb': 'White percentage', 'Nume fișier': 'File name',
+  // semnătura electronică, semnarea în bloc, formulare, atașamente
+  'Semnătură electronică': 'Electronic signature', 'Semnătură electronică (certificat)': 'Electronic signature (certificate)',
+  'Semnătură digitală cu certificat: buletin electronic, token, FintaxySign': 'Digital signature with a certificate: eID card, token, FintaxySign',
+  'Semnătură digitală calificată cu certificatul din Windows: buletinul electronic, un token sau stick-ul din birou (FintaxySign).':
+    'Qualified digital signature with a Windows certificate: the eID card, a token or the office stick (FintaxySign).',
+  'Semnătură digitală calificată cu un certificat din Windows: buletinul electronic, un token sau stick-ul din birou (FintaxySign). Windows îți cere PIN-ul.':
+    'Qualified digital signature with a Windows certificate: the eID card, a token or the office stick (FintaxySign). Windows asks for your PIN.',
+  'Semnează mai multe PDF-uri': 'Sign several PDFs', 'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN.': 'Electronic signature on several PDFs at once, with a single PIN.',
+  'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN. Fiecare PDF e semnat în câmpul lui de semnătură gol (declarațiile ANAF, formularele) sau, dacă nu are, invizibil. Lângă fiecare apare <nume>_semnat.pdf.':
+    'Electronic signature on several PDFs at once, with a single PIN. Each PDF is signed in its empty signature field (ANAF returns, forms) or, if it has none, invisibly. A <name>_semnat.pdf appears next to each.',
+  'Certificat': 'Certificate', '↻ Reîncarcă': '↻ Reload', 'Se încarcă certificatele…': 'Loading certificates…',
+  'Niciun certificat de semnare în Windows': 'No signing certificate in Windows',
+  'Buletinul electronic: e în cititor? Stick-ul din birou: pornește FintaxySign și verifică să scrie „connected” și „Driver installed”, apoi apasă Reîncarcă.':
+    'eID card: is it in the reader? Office stick: start FintaxySign and check it says “connected” and “Driver installed”, then press Reload.',
+  'Unde apare semnătura': 'Where the signature appears', 'Aleg locul pe pagină (trag un dreptunghi)': 'I choose the spot on the page (drag a rectangle)',
+  'Invizibilă (se vede în panoul de semnături)': 'Invisible (shown in the signatures panel)', 'Alege alt loc': 'Choose another spot',
+  'Trage un dreptunghi pe pagină unde vrei semnătura.': 'Drag a rectangle on the page where you want the signature.',
+  'Trage un dreptunghi unde vrei semnătura electronică · Esc = renunți': 'Drag a rectangle where you want the electronic signature · Esc = cancel',
+  'Motiv (opțional)': 'Reason (optional)', 'Locul (opțional)': 'Location (optional)', 'ex. București': 'e.g. Bucharest', 'Semnează': 'Sign',
+  'Alege certificatul.': 'Choose the certificate.', 'Semnarea nu a reușit.': 'Signing failed.',
+  'Ai modificări nesalvate. Semnătura se pune pe fișierul salvat: apasă întâi Salvează.': 'You have unsaved changes. The signature goes on the saved file: press Save first.',
+  'PDF-ul are deja o semnătură; a ta se adaugă după ea, fără s-o strice.': 'The PDF is already signed; yours is added after it, without breaking it.',
+  'Scrie PIN-ul în fereastra Windows… Cu stick-ul din birou (FintaxySign), dacă e la un coleg, aștepți câteva secunde rândul.':
+    'Type the PIN in the Windows window… With the office stick (FintaxySign), if a colleague has it, you wait a few seconds for your turn.',
+  '+ Adaugă PDF-uri…': '+ Add PDFs…', 'Fișiere': 'Files', 'Scoate': 'Remove', 'Adaugă PDF-urile de semnat.': 'Add the PDFs to sign.', 'Semnează toate': 'Sign all',
+  'Cu stick-ul din birou (FintaxySign): apasă întâi „Reserve 2 min” în FintaxySign, ca să nu-l ia un coleg între fișiere (altfel PIN-ul se cere din nou).':
+    'With the office stick (FintaxySign): first press “Reserve 2 min” in FintaxySign, so a colleague does not take it between files (otherwise the PIN is asked again).',
+  'Formular inteligent (XFA)': 'Smart form (XFA)',
+  'ca declarațiile ANAF. Îl poți citi și semna electronic aici; datele se completează în programul ANAF sau în Adobe Reader.':
+    'like ANAF tax returns. You can read and e-sign it here; the data is filled in the ANAF program or in Adobe Reader.',
+  'completează-le direct pe pagină, apoi Salvează.': 'fill them in right on the page, then Save.', 'Atașat:': 'Attached:',
+  'Deschide': 'Open', 'Arată în folder': 'Show in folder', 'Câmp de semnătură gol': 'Empty signature field', 'Semnează electronic': 'Sign electronically',
+  'Folder': 'Folder',
 }
 
 // Texte cu valori în ele: [tipar, înlocuire]. Tiparele sunt cât mai precise, ca să nu prindă textul scris de om.
@@ -185,6 +218,13 @@ const PATTERNS = [
   [/^Semnătura nu mai e în bibliotecă: /, 'The signature is no longer in the library: '],
   [/^Am deschis (.+) cu comentariul\.( Captura e în clipboard: lipește-o cu Ctrl\+V\.)?$/,
     (m, app, cap) => `Opened ${app} with the comment.${cap ? ' The capture is in the clipboard: paste it with Ctrl+V.' : ''}`],
+  [/^În câmpul de semnătură de pe pagina (\d+)$/, 'In the signature field on page $1'],
+  [/^Pe pagina (\d+)\.$/, 'On page $1.'],
+  [/^pe pagina (\d+)\.$/, 'on page $1.'],
+  [/^Formular cu (\d+) câmpuri$/, 'Form with $1 fields'],
+  [/^Semnat electronic: /, 'Signed electronically: '],
+  [/^(\d+) din (\d+) semnate/, '$1 of $2 signed'],
+  [/^Nu am putut citi câmpurile de pe pagina (\d+): /, "Couldn't read the fields on page $1: "],
   [/^Am deschis Gemini; comentariul e în clipboard: lipește-l cu Ctrl\+V\.( Captura: )?/,
     (m, cap) => `Opened Gemini; the comment is in the clipboard: paste it with Ctrl+V.${cap ? ' Capture: ' : ''}`],
 ]

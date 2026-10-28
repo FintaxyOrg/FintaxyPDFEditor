@@ -208,3 +208,29 @@ body:not([data-tool=edit]) .run { display: none; }
 .seg button.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
 .modal .msg { min-height: 18px; margin-top: 10px; color: #9b2338; font-size: 12.5px; }
 .modal .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+/* ---- câmpurile formularului ---- */
+.ffield { position: absolute; box-sizing: border-box; margin: 0; padding: 0 3px; border: 1px solid rgba(47, 107, 255, .35); border-radius: 2px;
+  background: rgba(234, 240, 255, .93); color: #141720; font-family: Arial, sans-serif; outline: none; z-index: 2; resize: none; }
+.ffield:hover { border-color: rgba(47, 107, 255, .7); }
+.ffield:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(47, 107, 255, .22); background: #fff; }
+.ffield.changed { border-color: var(--accent); background: #fff; }
+.ffield:disabled { background: transparent; border-color: transparent; color: transparent; pointer-events: none; }
+.ffield.chk { padding: 0; accent-color: var(--accent); }
+textarea.ffield { padding-top: 2px; line-height: 1.2; }
+body[data-tool=sigbox] .page { cursor: crosshair; }
+.zone.sigzone { border-color: var(--ok); background: rgba(31, 157, 107, .08); }
+
+/* ---- bara documentului (XFA, atașamente, câmp de semnătură gol) ---- */
+.docbar { flex: none; box-sizing: border-box; max-width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; box-shadow: 0 1px 3px rgba(18, 28, 56, .06); }
+.docbar .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.docbar .att { font-family: Consolas, monospace; }
+.docbar .meta { color: var(--muted); }
+.docbar button.secondary, .docbar button.primary { height: 28px; padding: 0 10px; font-size: 12.5px; }
+
+/* ---- semnarea în bloc ---- */
+.blist { display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 9px; padding: 6px 8px; }
+.brow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.brow .bn { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brow small { color: var(--danger); }

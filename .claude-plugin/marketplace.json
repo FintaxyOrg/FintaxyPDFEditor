@@ -1,0 +1,14 @@
+{
+  "name": "fintaxy-pdf-sign",
+  "owner": {
+    "name": "Fintaxy"
+  },
+  "description": "PDF Sign ca mod pentru Claude Code: preview și butoane sub PDF-urile din chat, editorul PDF în panou.",
+  "plugins": [
+    {
+      "name": "pdf-sign",
+      "source": "./",
+      "description": "Preview PDF în chat, semnătură olografă și electronică, formulare, comentarii pentru Claude"
+    }
+  ]
+}

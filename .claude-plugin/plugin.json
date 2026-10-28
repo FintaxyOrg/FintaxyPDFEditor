@@ -1,7 +1,7 @@
 {
   "name": "pdf-sign",
-  "version": "0.11.0",
-  "description": "Preview de PDF în chat și buton Semnează: alegi semnătura din bibliotecă și o pui pe pagină cu mouse-ul (continuarea skill-ului semnare-pdf).",
+  "version": "0.12.0",
+  "description": "Preview de PDF în chat și editorul PDF Sign: semnătură olografă și electronică (buletin, token, FintaxySign), semnare în bloc, formulare, PDF-uri ANAF.",
   "author": {
     "name": "Fintaxy"
   },

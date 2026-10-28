@@ -4,7 +4,8 @@ plus partea comună cu editorul (scrierea semnăturilor, textelor și modificăr
   python fx_sign.py render PDF PAGE [ZOOM]   -> JSON {pages, page, svg, signed}
   python fx_sign.py thumbs DIR               -> JSON [{name, file, svg}]
   python fx_sign.py undo PDF                 -> pune la loc versiunea de dinainte de ultima salvare
-  python fx_sign.py serve LIBRARY            -> serverul editorului (vezi editor_server.py); evenimente JSON pe stdout
+  python fx_sign.py serve [LIBRARY]          -> serverul editorului (vezi editor_server.py); evenimente JSON pe stdout
+  python fx_sign.py paths                    -> JSON {state, library, local}: unde stau jurnalele și semnăturile
   python fx_sign.py window URL               -> deschide URL-ul într-o fereastră Edge separată (rezerva panoului)
 
 Semnătura se pune ca în semnare-pdf/place_signature.py: imagine PNG transparentă peste pagină,
@@ -71,7 +72,88 @@ def render(pdf: str, page_no: int, zoom: float = 1.0):
         "</svg>"
     )
     out({"pages": n, "page": pi + 1, "width": show_w, "height": show_h, "svg": svg,
-         "signed": doc.get_sigflags() > 0})
+         "signed": is_signed(doc)})
+
+
+# ---------- câmpuri de semnătură și formulare ----------
+
+def signature_fields(doc) -> list:
+    """Câmpurile de semnătură ale PDF-ului (ex. „Semnătura” din declarațiile ANAF): nume, pagină, loc (pt, pagina cum
+    se vede), semnat sau nu."""
+    found = []
+    for page in doc:
+        for w in page.widgets(types=[fitz.PDF_WIDGET_TYPE_SIGNATURE]):
+            v = doc.xref_get_key(w.xref, "V")
+            if v[0] == "null":  # câmp combinat cu un părinte: valoarea e la părinte
+                parent = doc.xref_get_key(w.xref, "Parent")
+                if parent[0] == "xref":
+                    v = doc.xref_get_key(int(parent[1].split()[0]), "V")
+            r = w.rect * page.rotation_matrix
+            found.append({"name": w.field_name or "", "page": page.number + 1, "rect": [r.x0, r.y0, r.x1, r.y1],
+                          "signed": v[0] not in ("null", ""), "visible": r.width > 1 and r.height > 1})
+    return found
+
+
+def is_signed(doc) -> bool:
+    """Are o semnătură digitală pusă. Un câmp de semnătură gol (formularele, declarațiile ANAF nesemnate) nu contează:
+    SigFlags îl marchează și pe el, dar PDF-ul se poate încă completa și semna."""
+    if doc.get_sigflags() <= 0:
+        return False
+    try:
+        return any(f["signed"] for f in signature_fields(doc))
+    except Exception:
+        return True
+
+
+def is_xfa(doc) -> bool:
+    """Formular XFA (Adobe LiveCycle): așa sunt PDF-urile inteligente ale ANAF (D100, D112, D300...)."""
+    return doc.xref_get_key(doc.pdf_catalog(), "AcroForm/XFA")[0] not in ("null", "")
+
+
+FIELD_KINDS = {fitz.PDF_WIDGET_TYPE_TEXT: "text", fitz.PDF_WIDGET_TYPE_CHECKBOX: "check",
+               fitz.PDF_WIDGET_TYPE_RADIOBUTTON: "radio", fitz.PDF_WIDGET_TYPE_COMBOBOX: "combo",
+               fitz.PDF_WIDGET_TYPE_LISTBOX: "list"}
+
+
+def form_fields(page) -> list:
+    """Câmpurile de completat de pe pagină, cu locul lor în pagina cum se vede."""
+    items = []
+    for w in page.widgets():
+        kind = FIELD_KINDS.get(w.field_type)
+        if not kind:
+            continue
+        r = w.rect * page.rotation_matrix
+        it = {"xref": w.xref, "name": w.field_name or "", "label": w.field_label or "", "kind": kind,
+              "rect": [r.x0, r.y0, r.x1, r.y1], "readonly": bool(w.field_flags & 1),
+              "fs": w.text_fontsize or 0}
+        if kind == "text":
+            it.update(value=str(w.field_value or ""), multiline=bool(w.field_flags & (1 << 12)), maxlen=w.text_maxlen or 0)
+        elif kind in ("check", "radio"):
+            on = w.on_state()
+            on = on if isinstance(on, str) and on else "Yes"
+            it.update(on=on, value=w.field_value is True or str(w.field_value) == on)
+        else:
+            it.update(value=str(w.field_value or ""), options=[o if isinstance(o, str) else o[1] for o in (w.choice_values or [])])
+        items.append(it)
+    return items
+
+
+def fill_fields(doc, fills: list):
+    """fills: [{page, xref, value}] din editor; textele și listele primesc textul, bifele True/False."""
+    by_page = {}
+    for f in fills:
+        by_page.setdefault(int(f["page"]), {})[int(f["xref"])] = f["value"]
+    for pno, values in by_page.items():
+        for w in doc[pno - 1].widgets():
+            if w.xref not in values:
+                continue
+            v = values[w.xref]
+            if w.field_type in (fitz.PDF_WIDGET_TYPE_CHECKBOX, fitz.PDF_WIDGET_TYPE_RADIOBUTTON):
+                on = w.on_state()
+                w.field_value = (on if isinstance(on, str) and on else True) if v else "Off"
+            else:
+                w.field_value = str(v)
+            w.update()
 
 
 def label_of(path: Path) -> str:
@@ -80,6 +162,29 @@ def label_of(path: Path) -> str:
         if name.lower().startswith(prefix.lower()):
             return name[len(prefix):].strip() or name
     return name
+
+
+def default_library() -> str:
+    """Folderul cu semnături: „library” din settings.json, altfel Documente\\Semnaturi PDF Sign (creat la nevoie)."""
+    try:
+        lib = json.loads((STATE / "settings.json").read_text(encoding="utf-8")).get("library")
+    except (OSError, ValueError):
+        lib = None
+    if not lib:
+        docs = Path.home() / "Documents"
+        try:  # Documentele pot fi mutate (OneDrive, alt disc)
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders") as k:
+                docs = Path(os.path.expandvars(winreg.QueryValueEx(k, "Personal")[0]))
+        except OSError:
+            pass
+        lib = str(docs / "Semnaturi PDF Sign")
+    try:
+        Path(lib).mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    return lib
 
 
 def library(folder: str) -> list:
@@ -286,9 +391,10 @@ def stamp(pdf: Path, items: list, sigs: list, rotate: dict | None = None) -> Pat
            {type: 'text', page, x, y, fs, text, ...} text nou (y = partea de sus a primului rând)
            {type: 'edit', page, raw, segments: [{text, raw, origin, size, font, bold, italic, color, fonts}]}
                un rând existent rescris; segmentele se scriu unul după altul, cu spațiile dintre ele de dinainte
+           {type: 'field', page, xref, value}       un câmp de formular completat
     """
     doc = fitz.open(stream=pdf.read_bytes(), filetype="pdf")  # din memorie: putem scrie peste același fișier
-    if doc.get_sigflags() > 0:
+    if is_signed(doc):
         raise ValueError("PDF-ul are deja o semnătură digitală; orice modificare acum o invalidează.")
     target = output_path(pdf, signed=any(it.get("type") == "sig" for it in items))
     bak = backup_path(target)
@@ -296,6 +402,11 @@ def stamp(pdf: Path, items: list, sigs: list, rotate: dict | None = None) -> Pat
         shutil.copy2(target, bak)
     elif bak.exists():
         bak.unlink()
+
+    # 0. Câmpurile formularului completate în editor.
+    fills = [it for it in items if it.get("type") == "field"]
+    if fills:
+        fill_fields(doc, fills)
 
     # 1. Textul existent modificat: întâi se scoate (redactare fără umplere), apoi se scrie noul text.
     edits = [it for it in items if it.get("type") == "edit"]
@@ -410,12 +521,14 @@ def main():
         if cmd == "render":
             render(sys.argv[2], int(sys.argv[3]), float(sys.argv[4]) if len(sys.argv) > 4 else 1.0)
         elif cmd == "thumbs":
-            thumbs(sys.argv[2])
+            thumbs(sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else default_library())
         elif cmd == "undo":
             out(undo_file(sys.argv[2]))
+        elif cmd == "paths":  # pentru mod: unde ține aplicația jurnalele și semnăturile pe calculatorul ăsta
+            out({"state": str(STATE), "library": default_library(), "local": os.environ.get("LOCALAPPDATA", "")})
         elif cmd == "serve":
             import editor_server
-            editor_server.serve(sys.argv[2] if len(sys.argv) > 2 else "")
+            editor_server.serve(sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else default_library())
         elif cmd == "window":
             window(sys.argv[2])
         else:

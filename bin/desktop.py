@@ -42,23 +42,8 @@ def save_settings(**changes) -> dict:
 
 
 def library() -> str:
-    """Folderul cu semnături: „library” din settings.json, altfel Documente\\Semnaturi PDF Sign (creat la nevoie)."""
-    lib = settings().get("library")
-    if not lib:
-        docs = Path.home() / "Documents"
-        try:  # Documentele pot fi mutate (OneDrive, alt disc)
-            import winreg
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                                r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders") as k:
-                docs = Path(os.path.expandvars(winreg.QueryValueEx(k, "Personal")[0]))
-        except OSError:
-            pass
-        lib = str(docs / "Semnaturi PDF Sign")
-    try:
-        Path(lib).mkdir(parents=True, exist_ok=True)
-    except OSError:
-        pass
-    return lib
+    import fx_sign
+    return fx_sign.default_library()
 
 
 # ---------- alegerea fișierului ----------
@@ -87,6 +72,27 @@ def pick_pdf(initial: str = "") -> str:
     p = str(Path(p))
     save_settings(lastDir=str(Path(p).parent))
     return p
+
+
+def pick_pdfs(initial: str = "") -> list:
+    """Mai multe PDF-uri deodată (Ctrl/Shift + click), pentru semnarea în bloc."""
+    import tkinter as tk
+    from tkinter import filedialog
+    folder = initial if initial and os.path.isdir(initial) else settings().get("lastDir", "")
+    with _PICK:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        try:
+            en = english()
+            ps = filedialog.askopenfilenames(parent=root, title="Choose the PDFs to sign" if en else "Alege PDF-urile de semnat",
+                                             initialdir=folder or None, filetypes=[("PDF documents" if en else "Documente PDF", "*.pdf")])
+        finally:
+            root.destroy()
+    ps = [str(Path(p)) for p in ps or []]
+    if ps:
+        save_settings(lastDir=str(Path(ps[-1]).parent))
+    return ps
 
 
 # ---------- aplicațiile AI ----------
