@@ -45,6 +45,7 @@ const ICONS = {
   tool: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
   copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
 }
 function icon(name) {
   const t = document.createElement('template')
@@ -291,15 +292,27 @@ function renderFlyout() {
   }
   q.addEventListener('input', draw)
   q.addEventListener('keydown', e => { if (e.key === 'Enter') list.querySelector('.sigopt')?.click() })
+  const pathIn = h('input', { class: 'sigsearch', placeholder: 'Calea folderului cu semnături', value: S.app.library || '', title: S.app.library || '' })
+  const savePath = async () => {
+    try {
+      const r = await post('library', { path: pathIn.value })
+      S.app.library = r.library
+      await loadLib()
+      renderFlyout()
+      toast(`Folder setat: ${S.lib.length} semnături.`)
+    } catch (e) { toast(e.message) }
+  }
+  pathIn.addEventListener('keydown', e => { if (e.key === 'Enter') savePath() })
   fly.replaceChildren(
     h('div', { class: 'flyhead' }, h('h3', {}, 'Alege semnătura'),
-      h('span', {}, h('button', { class: 'linkbtn', title: 'Recitește folderul Semnaturi', onclick: async () => {
+      h('span', { class: 'flyicons' }, h('button', { class: 'linkbtn iconbtn', title: 'Recitește folderul Semnaturi', 'aria-label': 'Actualizează', onclick: async () => {
         await loadLib()
         renderFlyout()
         toast(`Lista e la zi: ${S.lib.length} semnături.`)
-      } }, '↻ Actualizează'), ' · ', h('button', { class: 'linkbtn', onclick: () => openUpload() }, '+ Nouă'),
-      S.app.library ? [' · ', h('button', { class: 'linkbtn', title: S.app.library,
-        onclick: () => post('open', { path: S.app.library, how: 'explorer' }).catch(e => toast(e.message)) }, 'Folder')] : null)),
+      } }, icon('refresh')), ' ', h('button', { class: 'linkbtn', onclick: () => openUpload() }, '+ Nouă'),
+      S.app.library ? [' ', h('button', { class: 'linkbtn iconbtn', title: 'Deschide folderul', 'aria-label': 'Folder',
+        onclick: () => post('open', { path: S.app.library, how: 'explorer' }).catch(e => toast(e.message)) }, icon('folder'))] : null)),
+    h('div', { class: 'libpath' }, pathIn, h('button', { class: 'linkbtn', onclick: savePath }, 'Setează')),
     h('label', { class: 'search' }, icon('search'), q), list)
   draw()
   return q

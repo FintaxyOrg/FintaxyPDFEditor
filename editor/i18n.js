@@ -26,7 +26,7 @@ const EN = {
   'Click pe pagină și scrie · trage de ✥ ca să muți textul': 'Click the page and type · drag ✥ to move the text',
   'Click pe orice rând din PDF și rescrie-l · Enter = gata · Esc = renunți': 'Click any line in the PDF and rewrite it · Enter = done · Esc = cancel',
   'Caută după nume': 'Search by name', 'Nicio semnătură cu numele ăsta.': 'No signature with that name.', 'Biblioteca e goală.': 'The library is empty.',
-  'Alege semnătura': 'Choose a signature', 'Recitește folderul Semnaturi': 'Reload the Semnaturi folder', '↻ Actualizează': '↻ Refresh', '+ Nouă': '+ New',
+  'Alege semnătura': 'Choose a signature', 'Recitește folderul Semnaturi': 'Reload the Semnaturi folder', '↻ Actualizează': '↻ Refresh', 'Actualizează': 'Refresh', 'Calea folderului cu semnături': 'Path of the signatures folder', 'Setează': 'Set', 'Folderul nu există.': 'The folder does not exist.', '+ Nouă': '+ New',
   'PDF-ul are semnătură digitală; nu-l modific.': "The PDF has a digital signature; I won't modify it.",
   'Trimite (Enter)': 'Send (Enter)', 'Trimite la': 'Send to', 'Trimite lui Claude': 'Send to Claude', 'Trimite': 'Send', 'Trimite din nou': 'Send again',
   'Trimis lui Claude: îl găsești în chat.': "Sent to Claude: you'll find it in the chat.", 'Trimis lui Claude.': 'Sent to Claude.',

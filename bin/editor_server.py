@@ -891,6 +891,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.json({"ok": False, "error": f"{type(err).__name__}: {err}"}, 500)
 
     def do_POST(self):
+        global LIB
         path, q = self.query()
         if not self.authorized(q):
             return None
@@ -1003,6 +1004,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 else:
                     subprocess.Popen(["explorer.exe", f"/select,{out_path}"])
                 return self.json({"ok": True, "out": out_path})
+            if path == "/api/library":
+                import desktop
+                folder = os.path.expandvars(str(b.get("path", "")).strip().strip('"'))
+                if not folder or not os.path.isdir(folder):
+                    return self.json({"ok": False, "error": "Folderul nu există."}, 400)
+                desktop.save_settings(library=folder)
+                LIB = folder
+                return self.json({"ok": True, "library": LIB, "count": len(library(LIB))})
             if path == "/api/settings":
                 import desktop
                 desktop.save_settings(**{k: v for k, v in b.items() if k in ("ai", "lang")})
