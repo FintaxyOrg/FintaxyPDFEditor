@@ -9,6 +9,12 @@ const Q = new URLSearchParams(location.search)
 const TOKEN = Q.get('t') || ''
 let PATH = Q.get('path') || ''
 
+// Bara de sus poate trece pe mai multe rânduri când panoul e îngust: --top ține înălțimea ei reală.
+const topBar = document.querySelector('header.top')
+const syncTop = () => document.documentElement.style.setProperty('--top', `${Math.ceil(topBar.getBoundingClientRect().height)}px`)
+new ResizeObserver(syncTop).observe(topBar)
+syncTop()
+
 // ---------- mărunțișuri ----------
 const $ = (s, el = document) => el.querySelector(s)
 function h(tag, attrs, ...kids) {

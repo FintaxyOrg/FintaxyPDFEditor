@@ -12,12 +12,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 svg.i { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---- bara de sus ---- */
-.top { position: fixed; inset: 0 0 auto 0; height: var(--top); z-index: 30; display: flex; align-items: center; gap: 10px;
-  padding: 0 10px 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
-.doc { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 1 1 auto; }
+/* Pe lățimi mici (panoul îngust) grupurile trec pe rândul următor în loc să se suprapună;
+   --top urmează înălțimea reală a barei (editor.js), deci restul paginii coboară cu ea. */
+.top { position: fixed; inset: 0 0 auto 0; min-height: 48px; z-index: 30; display: flex; flex-wrap: wrap; align-items: center;
+  gap: 4px 10px; padding: 8px 10px 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.doc { display: flex; align-items: center; gap: 4px; min-width: 150px; flex: 1 1 180px; }
+.doc > button { flex: none; }
 .doc-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.nav { display: flex; align-items: center; gap: 2px; flex: none; }
-.actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.nav { display: flex; align-items: center; gap: 2px; flex: 0 1 auto; flex-wrap: wrap; max-width: 100%; }
+.actions { display: flex; align-items: center; gap: 6px; flex: 0 1 auto; flex-wrap: wrap; max-width: 100%; }
 .sep { width: 1px; height: 20px; background: var(--line); margin: 0 6px; }
 .pg { color: var(--muted); min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
 button.icon, button.pct { border: 0; background: transparent; height: 32px; min-width: 32px; border-radius: 8px;
