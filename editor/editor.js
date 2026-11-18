@@ -52,6 +52,7 @@ const ICONS = {
   copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
   refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  printer: '<path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/>',
 }
 function icon(name) {
   const t = document.createElement('template')
@@ -87,6 +88,7 @@ function toast(text, opts = {}) {
   if (opts.action) t.append(h('button', { onclick: () => { t.remove(); opts.action.fn() } }, opts.action.label))
   $('#toasts').append(t)
   setTimeout(() => t.remove(), opts.ms || (opts.action ? 9000 : 4200))
+  return t
 }
 
 // ---------- starea ----------
@@ -469,6 +471,7 @@ function renderField(it) {
       if (it.kind === 'radio' && el.checked) {
         for (const o of S.items) if (o !== it && o.type === 'field' && o.kind === 'radio' && o.name === it.name) { o.value = false; o.el.checked = false }
       }
+      for (const o of S.items) if (o.type === 'field' && o.el?.classList.contains('chk')) o.el.classList.toggle('changed', !!o.value !== !!o.orig)
       dirty()
     })
   } else if (it.kind === 'combo' || it.kind === 'list') {
@@ -943,6 +946,81 @@ async function undo(out, source) {
     toast(err.message, { err: true })
   }
 }
+
+// ---------- printarea ----------
+// Pe hârtie ies doar paginile, câte una pe foaie, fiecare întreagă pe foaia aleasă în dialog (A4, Letter), fără interfață.
+// Foaia n-are margini (editor.css), deci browserul n-are unde să pună antetul și subsolul lui (data, titlul, adresa).
+// Butonul de printare și Ctrl+P: serverul scrie în memorie ce e pus în editor și nesalvat încă, exact ca la salvare,
+// și dă paginile ca imagini de tipar. Printarea din meniul browserului nu poate aștepta serverul: ia paginile de pe
+// ecran, cu tot ce e pus pe ele, într-un SVG care le potrivește pe foaie.
+const SVGNS = 'http://www.w3.org/2000/svg'
+const endPrint = () => $('#printRoot')?.remove()
+// Rezoluția de tipar: 300 dpi la documentele obișnuite, mai puțin la cele foarte lungi (memoria browserului).
+function printDpi() {
+  const inch2 = S.pages.reduce((a, p) => a + (p.w / 72) * (p.h / 72), 0)
+  return Math.max(120, Math.min(300, Math.floor(Math.sqrt(120e6 / Math.max(inch2, 1)))))
+}
+async function printDoc() {
+  if (!S.doc || S.printing) return
+  if (typing()) document.activeElement.blur()
+  S.printing = true
+  endPrint()
+  const note = toast(`Pregătesc printarea: 0 din ${S.pages.length} pagini…`, { ms: 120000 })
+  try {
+    const r = await post('print', { path: PATH, items: serialize() })
+    const dpi = printDpi()
+    const root = h('div', { id: 'printRoot' })
+    const imgs = r.pages.map((pg, i) => {
+      const img = h('img', { alt: '', class: pg.w > pg.h ? 'land' : 'port', src: url('printpage', { id: r.id, n: i + 1, dpi }) })
+      root.append(h('div', { class: 'sheet' }, img))
+      return img
+    })
+    document.body.append(root)
+    let ready = 0
+    const failed = []
+    await Promise.all(imgs.map((img, i) => img.decode().then(() => {
+      note.firstChild.textContent = tr(`Pregătesc printarea: ${++ready} din ${imgs.length} pagini…`)
+    }, () => failed.push(i + 1))))
+    if (failed.length) {
+      endPrint()
+      return toast(`Nu am putut pregăti pagina ${failed.sort((a, b) => a - b).join(', ')}; nu printez.`, { err: true, ms: 8000 })
+    }
+    note.remove()
+    window.print()
+  } catch (err) {
+    endPrint()
+    toast(err.message, { err: true, ms: 8000 })
+  } finally {
+    note.remove()
+    S.printing = false
+  }
+}
+function printRootFromScreen() {
+  const root = h('div', { id: 'printRoot' })
+  for (const p of S.pages) {
+    const W = p.w * S.scale, H = p.h * S.scale
+    const svg = document.createElementNS(SVGNS, 'svg')
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`)
+    svg.setAttribute('class', p.w > p.h ? 'land' : 'port')
+    const fo = document.createElementNS(SVGNS, 'foreignObject')
+    fo.setAttribute('width', W)
+    fo.setAttribute('height', H)
+    const page = p.el.cloneNode(true)
+    const from = p.el.querySelectorAll('.ffield'), to = page.querySelectorAll('.ffield')
+    from.forEach((f, i) => { to[i].value = f.value; to[i].checked = f.checked }) // valorile nu se copiază cu cloneNode
+    fo.append(page)
+    svg.append(fo)
+    root.append(h('div', { class: 'sheet' }, svg))
+  }
+  return root
+}
+addEventListener('beforeprint', () => {
+  if (S.printing || !S.doc || $('#printRoot')) return
+  const missing = S.pages.some(p => !p.img.complete || !p.img.naturalWidth)
+  document.body.append(printRootFromScreen())
+  if (missing) setTimeout(() => toast('Unele pagini nu erau încărcate. Printează cu butonul de printare (Ctrl+P), care le pregătește pe toate.', { err: true, ms: 9000 }), 0)
+})
+addEventListener('afterprint', endPrint)
 
 // ---------- sertarul din dreapta ----------
 function openDrawer(title, ...content) {
@@ -1674,6 +1752,7 @@ function paletteItems() {
     act('Semnează mai multe PDF-uri', openBulkSign, null, '', 'bloc bulk lot certificat'),
     act('Semnătură nouă în bibliotecă', openUpload, 'sig', '', 'adauga poza scan'),
     act('Salvează', () => save(), null, 'Ctrl+S'),
+    act('Printează', () => printDoc(), 'printer', 'Ctrl+P', 'print tipareste imprimanta'),
     act('Deschide alt PDF', () => openOther(), 'open', 'Ctrl+O'),
     act('Organizează paginile', openOrganize, 'pages', 'P', 'ordoneaza muta sterge pagini reordoneaza organize'),
     act('Rotește pagina spre dreapta', () => rotate(90, false), 'rotR'),
@@ -1780,6 +1859,7 @@ function openPalette() {
 // ---------- tastatură, butoane, pornire ----------
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); return }
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'p') { e.preventDefault(); printDoc(); return }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); return }
   if ($('#palette')) return // tastele merg în căutare
   if (e.key === 'Escape') {
@@ -1837,6 +1917,8 @@ $('#rotR').addEventListener('click', e => rotate(90, e.shiftKey))
 $('#zpct').addEventListener('click', () => setZoom(1))
 $('#btnSave').addEventListener('click', () => save())
 $('#btnCert').addEventListener('click', () => openCertSign())
+$('#btnPrint').append(icon('printer'))
+$('#btnPrint').addEventListener('click', () => printDoc())
 $('#btnSearch').append(icon('search'))
 $('#btnSearch').addEventListener('click', () => openPalette())
 $('#btnComments').addEventListener('click', () => ($('#drawer').hidden ? openCommentsList() : closeDrawer()))

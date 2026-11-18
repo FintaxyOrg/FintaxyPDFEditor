@@ -285,3 +285,36 @@ body[data-tool=sigbox] .page { cursor: crosshair; }
 .iconbtn .i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .libpath { display: flex; align-items: center; gap: 8px; margin: 0 4px 6px; }
 .libpath input { flex: 1; min-width: 0; font-size: 11px; }
+
+/* ---- printarea: doar paginile, câte una pe foaie ----
+   Foaia n-are margini, deci browserul n-are unde să pună antetul și subsolul lui (data, titlul, adresa).
+   #printRoot (editor.js): o foaie pe pagină, cu imaginea de tipar (butonul de printare) sau cu pagina de pe ecran într-un
+   SVG (meniul browserului); pagina intră întreagă pe hârtia din dialog, la 5 mm de margine (unde imprimantele nu tipăresc),
+   iar pagina culcată se întoarce pe foaia în picioare. */
+#printRoot { display: none; }
+@page { margin: 0; }
+@media print {
+  html, body { height: auto; overflow: visible; background: #fff; }
+  body > :not(#printRoot) { display: none !important; }
+  #printRoot { display: block; }
+  .sheet { box-sizing: border-box; width: 100vw; height: 100vh; padding: 5mm; overflow: hidden; break-after: page;
+    display: flex; align-items: center; justify-content: center; }
+  .sheet:last-child { break-after: auto; }
+  .sheet > img { display: block; flex: none; max-width: 100%; max-height: 100%; }
+  .sheet > svg { display: block; flex: none; width: 100%; height: 100%; }
+  /* paginile luate de pe ecran: fără ce e doar pentru lucru (numărul paginii, comentarii, selecția, butoanele) */
+  #printRoot .page { box-shadow: none; }
+  #printRoot :is(.num, .pin, .zone, .run, .ghost, .x, .grip, .ffield:not(.changed)) { display: none !important; }
+  #printRoot .item.sel { outline: none; }
+  #printRoot .txt:empty::before { content: none; }
+  #printRoot :is(.editbox, .ffield) { box-shadow: none !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #printRoot .ffield.changed { border-color: transparent; }
+}
+@media print and (orientation: portrait) {
+  .sheet > .land { max-width: calc(100vh - 10mm); max-height: calc(100vw - 10mm); transform: rotate(-90deg); }
+  .sheet > svg.land { width: calc(100vh - 10mm); height: calc(100vw - 10mm); }
+}
+@media print and (orientation: landscape) {
+  .sheet > .port { max-width: calc(100vh - 10mm); max-height: calc(100vw - 10mm); transform: rotate(-90deg); }
+  .sheet > svg.port { width: calc(100vh - 10mm); height: calc(100vw - 10mm); }
+}

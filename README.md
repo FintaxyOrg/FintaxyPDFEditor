@@ -9,6 +9,7 @@ Aplicație Windows pentru semnat și editat PDF-uri:
 - **organizarea paginilor**: miniaturi pe care le tragi în altă ordine, le ștergi sau le rotești (tasta **P**);
 - **unelte PDF direct în aplicație**: unire, împărțire, extragere și ștergere de pagini, comprimare, PDF → Word / Excel / imagini / text, imagini → PDF, Word / Excel → PDF (cu Microsoft Office), parolă, watermark, numere de pagină, aplatizare, validarea semnăturii, reparare;
 - **căutare globală Ctrl+K**: orice unealtă sau acțiune, scrisă cu sau fără diacritice;
+- **printare** (butonul cu imprimanta sau **Ctrl+P**): doar paginile documentului, câte una pe foaie, întregi pe hârtia aleasă, cu semnăturile puse și nesalvate încă, fără bara editorului și fără data sau adresa browserului;
 - text nou sau corectat, comentarii pentru un AI și, dacă e instalat Stirling PDF, încă ~50 de unelte rare (OCR, conversii exotice).
 
 ## Pentru contabili: instalare
@@ -67,6 +68,7 @@ Uneltele marcate **Stirling** (OCR, conversii rare) au nevoie de [Stirling PDF](
 | S / T / E | semnătură olografă / text / editează textul |
 | C / R | comentariu / captură de zonă pentru AI |
 | Ctrl+S / Ctrl+O | salvează / deschide alt PDF |
+| Ctrl+P | printează documentul |
 
 ### Actualizare și dezinstalare
 

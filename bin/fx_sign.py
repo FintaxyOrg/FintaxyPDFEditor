@@ -402,7 +402,20 @@ def stamp(pdf: Path, items: list, sigs: list, rotate: dict | None = None) -> Pat
         shutil.copy2(target, bak)
     elif bak.exists():
         bak.unlink()
+    apply_items(doc, items, sigs, rotate)
+    tmp = target.with_name(f".{target.stem}.tmp.pdf")
+    doc.save(str(tmp), garbage=3, deflate=True)
+    doc.close()
+    try:
+        os.replace(tmp, target)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
+    return target
 
+
+def apply_items(doc, items: list, sigs: list, rotate: dict | None = None):
+    """Elementele din editor scrise în documentul deschis (în memorie); folosit la salvare și la printare."""
     # 0. Câmpurile formularului completate în editor.
     fills = [it for it in items if it.get("type") == "field"]
     if fills:
@@ -462,15 +475,6 @@ def stamp(pdf: Path, items: list, sigs: list, rotate: dict | None = None) -> Pat
             doc.subset_fonts()
         except Exception:
             pass
-    tmp = target.with_name(f".{target.stem}.tmp.pdf")
-    doc.save(str(tmp), garbage=3, deflate=True)
-    doc.close()
-    try:
-        os.replace(tmp, target)
-    except OSError:
-        tmp.unlink(missing_ok=True)
-        raise
-    return target
 
 
 def organize(pdf: Path, pages: list) -> Path:

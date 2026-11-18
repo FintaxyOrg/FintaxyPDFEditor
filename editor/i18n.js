@@ -16,6 +16,9 @@ const EN = {
   'Rotește pagina spre dreapta · Shift = toate paginile': 'Rotate page right · Shift = all pages', 'Comentariile': 'Comments',
   'Selectează și mută (V)': 'Select and move (V)', 'Semnătură (S)': 'Signature (S)', 'Adaugă text (T)': 'Add text (T)',
   'Editează textul din PDF (E)': 'Edit PDF text (E)', 'Toate uneltele PDF': 'All PDF tools', 'Salvează': 'Save', 'Se salvează…': 'Saving…',
+  'Printează (Ctrl+P)': 'Print (Ctrl+P)', 'Printează': 'Print',
+  'Unele pagini nu erau încărcate. Printează cu butonul de printare (Ctrl+P), care le pregătește pe toate.':
+    'Some pages were not loaded yet. Print with the print button (Ctrl+P), which prepares all of them.',
 
   // editorul
   'Aplicația AI care primește comentariul (rămâne ținută minte)': 'AI app that receives the comment (remembered)',
@@ -256,6 +259,8 @@ const PATTERNS = [
   [/^Doar notă · /, 'Note only · '],
   [/^Rotit și salvat: /, 'Rotated and saved: '],
   [/^Salvat: /, 'Saved: '],
+  [/^Pregătesc printarea: (\d+) din (\d+) pagini…$/, 'Preparing to print: $1 of $2 pages…'],
+  [/^Nu am putut pregăti pagina (.+); nu printez\.$/, "Couldn't prepare page $1; not printing."],
   [/^Comentarii \((\d+)\)$/, 'Comments ($1)'],
   [/^Toate uneltele Stirling ?/, 'All Stirling tools '],
   [/^Stirling PDF nu răspunde: /, 'Stirling PDF is not responding: '],
