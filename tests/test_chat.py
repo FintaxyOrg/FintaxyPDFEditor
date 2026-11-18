@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# Stare separată: limba și conversațiile aplicației de pe acest calculator nu intră în test și nu sunt atinse.
+os.environ["FX_STATE"] = tempfile.mkdtemp(prefix="pdfsign-chat-state-")
 sys.path.insert(0, str(ROOT / "bin"))
 sys.path.insert(0, str(ROOT / "tests"))
 

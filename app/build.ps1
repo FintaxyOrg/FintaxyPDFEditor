@@ -36,7 +36,7 @@ Run $py -m PyInstaller --noconfirm --clean --windowed --name 'PDF Sign' `
     --distpath $dist --workpath (Join-Path $root 'build') --specpath (Join-Path $root 'build') `
     (Join-Path $root 'bin\desktop.py')
 
-Copy-Item (Join-Path $here 'install.ps1'), (Join-Path $here 'Instalare.cmd'), (Join-Path $here 'Dezinstalare.cmd') $app
+Copy-Item (Join-Path $here 'install.ps1'), (Join-Path $here 'Instalare.cmd'), (Join-Path $here 'Dezinstalare.cmd'), (Join-Path $root 'LICENSE') $app
 $version = (Get-Content (Join-Path $root '.claude-plugin\plugin.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
 Set-Content (Join-Path $app 'version.txt') $version -Encoding ASCII
 Compress-Archive -Path $app -DestinationPath $zip -CompressionLevel Optimal

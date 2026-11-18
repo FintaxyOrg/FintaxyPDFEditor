@@ -463,13 +463,13 @@ const MOD_PROMPT = () => T(`Instalează modul PDF Sign (Fintaxy) pentru Claude C
 2. Rulează: claude plugin install pdf-sign@fintaxy-pdf-sign
 3. Verifică să existe Python 3.12; dacă lipsește, instalează-l cu winget (pe tăcute, cu acordurile acceptate). Apoi instalează pachetele din requirements.txt al modului (pip install -r requirements.txt, din folderul în care s-a instalat).
 4. Spune-mi să dau /reload-plugins, apoi arată-mi pe un PDF de test că sub el apar butoanele Preview / Deschide / Semnează.
-Dacă marketplace-ul nu se poate adăuga (repo privat), spune-mi ce cont GitHub trebuie să primească acces și oprește-te acolo.`,
+Dacă marketplace-ul nu se poate adăuga, spune-mi eroarea și oprește-te acolo.`,
 `Install the PDF Sign (Fintaxy) mod for Claude Code on this computer:
 1. Run: claude plugin marketplace add FintaxyOrg/FintaxyPDFEditor
 2. Run: claude plugin install pdf-sign@fintaxy-pdf-sign
 3. Make sure Python 3.12 exists; if it is missing, install it with winget (silently, agreements accepted). Then install the packages from the mod's requirements.txt (pip install -r requirements.txt, from the folder it was installed in).
 4. Tell me to run /reload-plugins, then show me on a test PDF that the Preview / Open / Sign buttons appear under it.
-If the marketplace cannot be added (private repo), tell me which GitHub account needs access and stop there.`)
+If the marketplace cannot be added, tell me the error and stop there.`)
 
 export async function openOnboarding() {
   const { h } = X

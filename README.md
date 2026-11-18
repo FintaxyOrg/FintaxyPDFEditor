@@ -144,7 +144,7 @@ Ce nu pot verifica testele: PIN-ul adevărat al unui card (îl scrie doar omul, 
 
 ### Mod-ul pentru Claude Code
 
-Sub fiecare PDF pomenit în chat apar Preview / Deschide / Semnează, iar editorul se deschide în panoul lui Claude. Are nevoie de Python cu pachetele de mai sus (`pip install -r requirements.txt`). Se instalează din Claude Code (repo-ul e privat: contul tău GitHub trebuie să aibă acces):
+Sub fiecare PDF pomenit în chat apar Preview / Deschide / Semnează, iar editorul se deschide în panoul lui Claude. Are nevoie de Python cu pachetele de mai sus (`pip install -r requirements.txt`). Se instalează din Claude Code:
 
 ```
 /plugin install pdf-sign --marketplace FintaxyOrg/FintaxyPDFEditor
@@ -164,3 +164,29 @@ git push origin master --tags
 ```
 
 Build local: `powershell -ExecutionPolicy Bypass -File app\build.ps1` → `dist\PDF-Sign-win64.zip` și `dist\PDF-Sign-Setup.exe` (~5 minute), apoi `gh release create vX.Y.Z dist\PDF-Sign-Setup.exe dist\PDF-Sign-win64.zip`. (GitHub Actions dă `startup_failure` din noiembrie 2026; până e reparat, release-ul se face local.)
+
+## Licență
+
+PDF Sign e software liber, sub **GNU Affero General Public License v3.0** (fișierul `LICENSE`). Copyright © 2026 Fintaxy.
+
+Poți folosi, modifica și da mai departe aplicația, cu condiția să dai mai departe și codul sursă al variantei tale, sub aceeași licență. Kitul de instalare e construit din acest depozit (`app\build.ps1`).
+
+Licența e AGPL fiindcă aplicația scrie în PDF cu PyMuPDF (MuPDF), care e AGPL-3.0. Pachetele puse în kit, fiecare sub licența ei:
+
+| Pachet | Licență |
+|---|---|
+| PyMuPDF (MuPDF) | AGPL-3.0 |
+| pyHanko, pyhanko-certvalidator, asn1crypto, oscrypto, uritools, tzlocal | MIT |
+| pdf2docx, python-docx, openpyxl, et_xmlfile, fonttools, PyYAML, termcolor | MIT |
+| urllib3, charset-normalizer, cffi (MIT-0) | MIT |
+| Pillow | MIT-CMU |
+| NumPy, lxml, idna, pycparser | BSD-3-Clause |
+| OpenCV (opencv-python-headless), requests, fire, tzdata | Apache-2.0 |
+| cryptography | Apache-2.0 sau BSD-3-Clause |
+| certifi | MPL-2.0 |
+| typing_extensions, Python | PSF-2.0 |
+| PyInstaller (programul de pornire din kit) | GPL-2.0 cu excepție pentru aplicațiile împachetate |
+| Tesseract tessdata (`ron`, `eng`) | Apache-2.0 |
+| iconițe Fluent UI | MIT |
+
+LibreOffice, Stirling PDF, Node.js și adaptorul Claude nu sunt în kit: aplicația le descarcă de la sursa lor oficială, fiecare sub licența ei.

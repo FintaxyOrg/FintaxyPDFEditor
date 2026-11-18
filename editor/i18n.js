@@ -70,7 +70,7 @@ const EN = {
   'Nu a venit niciun răspuns în 5 minute. Dacă fereastra de PIN nu a apărut, repornește PDF Sign și încearcă din nou.':
     'No answer came in 5 minutes. If the PIN window did not appear, restart PDF Sign and try again.',
   'Fișierul nu mai există.': 'The file no longer exists.',
-  'Nu găsesc FintaxySign.exe pe calculator. Cere-i lui Cristian folderul FintaxySign.': 'FintaxySign.exe was not found on this computer. Ask Cristian for the FintaxySign folder.',
+  'Nu găsesc FintaxySign.exe pe calculator. Cere folderul FintaxySign de la administratorul firmei.': 'FintaxySign.exe was not found on this computer. Ask your company administrator for the FintaxySign folder.',
   'Instalează LibreOffice': 'Install LibreOffice',
   'Pentru Word / Excel → PDF trebuie LibreOffice (gratuit) sau Microsoft Office. Apasă „Instalează LibreOffice” mai jos: se instalează singur, fără alte întrebări.':
     'Word / Excel → PDF needs LibreOffice (free) or Microsoft Office. Press “Install LibreOffice” below: it installs by itself, no further questions.',

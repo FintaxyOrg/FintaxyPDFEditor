@@ -1096,7 +1096,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 fs = winenv.fintaxysign(desktop.settings().get("fintaxysign", ""))
                 if not fs["running"]:
                     if not fs["path"]:
-                        return self.json({"ok": False, "error": "Nu găsesc FintaxySign.exe pe calculator. Cere-i lui Cristian folderul FintaxySign."}, 404)
+                        return self.json({"ok": False, "error": "Nu găsesc FintaxySign.exe pe calculator. Cere folderul FintaxySign de la administratorul firmei."}, 404)
                     os.startfile(fs["path"])  # noqa: S606 - aplicația de birou pentru stick
                 return self.json({"ok": True})
             if path == "/api/deps/install":

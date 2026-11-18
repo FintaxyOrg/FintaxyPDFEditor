@@ -3,9 +3,9 @@ import { expect, test } from 'claude-code/testing'
 import { candidates, fileName, normalize, shownFrom } from './register'
 
 test('găsește căile PDF cu spații, două în aceeași frază', () => {
-  const text = String.raw`Am salvat I:\Shared drives\FINTAXY HQ\01_Management\Acord X.pdf și C:\Temp\b.pdf, gata.`
+  const text = String.raw`Am salvat D:\Documente firma\Contracte 2026\Acord X.pdf și C:\Temp\b.pdf, gata.`
   expect(candidates(text, '')).toEqual([
-    String.raw`I:\Shared drives\FINTAXY HQ\01_Management\Acord X.pdf`,
+    String.raw`D:\Documente firma\Contracte 2026\Acord X.pdf`,
     String.raw`C:\Temp\b.pdf`,
   ])
 })
