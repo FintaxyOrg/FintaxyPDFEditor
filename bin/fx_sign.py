@@ -537,10 +537,29 @@ def window(url: str):
     profile = STATE / "browser"
     profile.mkdir(parents=True, exist_ok=True)
     flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-    subprocess.Popen([browser(), f"--app={url}", f"--user-data-dir={profile}", "--window-size=1100,1200",
-                      "--no-first-run", "--no-default-browser-check", "--disable-features=Translate"],
-                     close_fds=True, creationflags=flags)
+    # Fereastra editorului nu trebuie „adormită” când e acoperită de alte ferestre: altfel pagina nu mai dă semn de
+    # viață, chatul nu mai primește răspunsul și salvările întârzie.
+    args = [browser(), f"--app={url}", f"--user-data-dir={profile}", "--window-size=1100,1200",
+            "--no-first-run", "--no-default-browser-check", "--disable-features=Translate,msSleepingTabs,CalculateNativeWinOcclusion",
+            "--disable-background-timer-throttling", "--disable-renderer-backgrounding",
+            "--disable-backgrounding-occluded-windows"]
+    if os.environ.get("FX_WINDOW_POS"):  # doar la teste: fereastra în afara ecranului, ca să nu deranjeze omul
+        args.append(f"--window-position={os.environ['FX_WINDOW_POS']}")
+    subprocess.Popen(args, close_fds=True, creationflags=flags)
     out({"ok": True})
+
+
+def browser_alive() -> bool:
+    """Mai e deschisă vreo fereastră a editorului? Edge ține fișierul `lockfile` din profilul aplicației deschis doar
+    pentru el cât rulează; dacă îl putem deschide noi (sau nu există), nu mai rulează."""
+    lock = STATE / "browser" / "lockfile"
+    if not lock.exists():
+        return False
+    try:
+        os.close(os.open(str(lock), os.O_RDWR))
+        return False
+    except OSError:
+        return True
 
 
 def main():

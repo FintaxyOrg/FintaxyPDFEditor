@@ -306,10 +306,9 @@ class Stirling:
 
     @staticmethod
     def install_dir():
-        for p in (r"C:\Program Files\Stirling PDF", os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Stirling PDF")):
-            if os.path.exists(os.path.join(p, "Stirling-PDF.exe")):
-                return p
-        return None
+        """Stirling PDF instalat pe calculator sau cel adus de aplicație în folderul ei (bin/deps.py)."""
+        import deps
+        return deps.stirling_dir() or None
 
     @classmethod
     def ok(cls, port) -> bool:
@@ -443,7 +442,7 @@ class Stirling:
                 return cls.port
             inst = cls.install_dir()
             if not inst:
-                raise RuntimeError("Stirling PDF nu e instalat pe calculator (winget install --id StirlingTools.StirlingPDF -e).")
+                raise RuntimeError("Uneltele Stirling se instalează singure în fundal: încearcă din nou în câteva minute.")
             port = cls.start(inst)
             t = time.time()
             while time.time() - t < wait:
@@ -948,12 +947,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 st["connections"] = [{"name": m.get("name", ""), "url": m.get("url", ""), "hasToken": bool(m.get("token"))}
                                      for m in cfg.get("mcp") or []]
                 st["userSettings"] = bool(cfg.get("chatUserSettings"))
+                st["mode"] = cfg.get("chatMode") or "ask"
                 return self.json(st)
             if path == "/api/chat/events":
                 import acp_chat
                 chat = acp_chat.chat_for(q["path"])
                 revs = json.loads(q.get("revs") or "{}")
-                return self.json(chat.since(int(q.get("since") or 0), revs, wait=float(q.get("wait") or 25)))
+                known = {"1": True, "0": False}.get(q.get("running"))
+                return self.json(chat.since(int(q.get("since") or 0), revs, wait=float(q.get("wait") or 25), running=known))
             if path == "/api/stirling/tools":
                 return self.json(Stirling.tools())
             if path == "/api/stirling/certs":
@@ -1107,7 +1108,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 cfg = desktop.settings()
                 chat = acp_chat.chat_for(b["path"])
                 chat.send(str(b.get("text") or "").strip(), int(b.get("page") or 1), cfg.get("mcp") or [],
-                          bool(cfg.get("chatUserSettings")), b.get("images") or [])
+                          bool(cfg.get("chatUserSettings")), b.get("images") or [], cfg.get("chatMode") or "ask")
                 return self.json({"ok": True})
             if path == "/api/chat/permission":
                 import acp_chat
@@ -1159,7 +1160,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.json({"ok": True, "library": LIB, "count": len(library(LIB))})
             if path == "/api/settings":
                 import desktop
-                desktop.save_settings(**{k: v for k, v in b.items() if k in ("ai", "lang", "onboarded")})
+                desktop.save_settings(**{k: v for k, v in b.items() if k in ("ai", "lang", "onboarded", "chatMode")})
                 return self.json({"ok": True})
             if path == "/api/ping":
                 if STANDALONE:
@@ -1167,6 +1168,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.json({"ok": True})
             if path == "/api/bye":
                 CLIENTS.pop(str(b.get("id")), None)
+                if STANDALONE:
+                    print(time.strftime("%Y-%m-%d %H:%M:%S ") + f"fereastră închisă (mai sunt {len(CLIENTS)})", file=sys.stderr, flush=True)
                 return self.json({"ok": True})
             if path == "/api/stirling/run":
                 res = run_tool(b)
@@ -1206,7 +1209,8 @@ def send_ai(app, c: dict, path: str, items: list) -> dict:
             import acp_chat
             cfg = desktop.settings()
             acp_chat.chat_for(path).send(desktop.message(c, str(Path(path))), int(c.get("page") or 1), cfg.get("mcp") or [],
-                                         bool(cfg.get("chatUserSettings")), [c["capture"]] if c.get("capture") else [])
+                                         bool(cfg.get("chatUserSettings")), [c["capture"]] if c.get("capture") else [],
+                                         cfg.get("chatMode") or "ask")
             desktop.save_settings(ai="chat")
             sent = {"app": "chat", "name": desktop.APP_BY_ID["chat"]["name"], "note": "Am trimis comentariul în chatul cu Claude."}
         else:
@@ -1241,6 +1245,13 @@ def watchdog(srv):
         empty_since = empty_since or now
         # Prima fereastră are timp să se încarce; după închidere, câteva secunde pentru un reload.
         if now - empty_since > (6 if seen else 90):
+            # Paginile nu mai dau semn, dar fereastra poate fi încă deschisă: acoperită de alte ferestre, Edge îi
+            # „adoarme” pagina. Cât timp Edge rulează pe profilul aplicației, serverul rămâne pornit.
+            if fx_sign.browser_alive():
+                seen = True
+                continue
+            print(time.strftime("%Y-%m-%d %H:%M:%S ") + f"oprire: nicio fereastră (văzută înainte: {seen}, fără semn de {round(now - empty_since)} s)",
+                  file=sys.stderr, flush=True)
             srv.shutdown()
             return
 
@@ -1255,7 +1266,15 @@ def make_server(lib: str, standalone: bool = False):
 def run(srv):
     if STANDALONE:
         threading.Thread(target=watchdog, args=(srv,), daemon=True).start()
-    Stirling.warm()
+    if Stirling.install_dir():
+        Stirling.warm()
+    if STANDALONE:
+        # Componentele care lipsesc (LibreOffice, Stirling, Node.js, legătura cu Claude) vin singure, în fundal.
+        try:
+            import deps
+            deps.auto()
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
     try:
         srv.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:

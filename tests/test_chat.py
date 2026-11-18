@@ -60,6 +60,7 @@ def main(folder: Path):
     check("sesiunea lucrează în folderul PDF-ului", f"Folder de lucru: {folder}" in text, text)
     check("conexiunea CRM (MCP) ajunge la agent", "MCP: fintaxy-crm" in text, text)
     check("agentul primește contextul PDF Sign", "Sistem: True" in text)
+    check("prima sesiune: fără istoric în față", "Istoric: False" in text, text[-60:])
     tool = next(e for e in events if e["type"] == "tool")
     check("unealta apare terminată", tool["status"] == "completed" and "Read" in tool["title"], str(tool))
     check("pagina curentă e trimisă cu mesajul", events[0].get("page") == 2)
@@ -118,6 +119,7 @@ def main(folder: Path):
     events, seq = drain(chat, seq, revs)
     text = "".join(e["text"] for e in events if e["type"] == "text")
     check("conexiunile schimbate pornesc o sesiune nouă", chat.session_id != sid and "MCP: niciunul" in text, text[-80:])
+    check("sesiunea nouă primește ce s-a vorbit înainte", "Istoric: True" in text, text[-60:])
 
     # agentul moare la mijloc
     chat.send("Numără rar.", 1, [], False)
@@ -129,8 +131,24 @@ def main(folder: Path):
     events, seq = drain(chat, seq, revs)
     check("după oprire, următorul mesaj repornește agentul", events[-1]["type"] == "done", str(events[-1]))
 
+    # titluri pe înțelesul omului și detaliul cererii de acord
+    check("titlu unealtă: comandă", acp_chat.describe_tool("Bash", "x", {"command": "mkdir a\npython b.py", "description": "Face folderul"}) == "Rulează o comandă: Face folderul")
+    check("titlu unealtă: fișier", acp_chat.describe_tool("Read", "Read C:/x/contract.pdf", {"file_path": "C:/x/contract.pdf"}) == "Citește contract.pdf")
+    check("titlu unealtă: MCP cu argumente", acp_chat.describe_tool("mcp__fintaxy-crm__search_records", "", {"object": "deals", "query": "Popescu"}) == "Search records (fintaxy-crm): object=deals Popescu")
+    check("titlu unealtă: script lipit în comandă = doar primul rând", "\n" not in acp_chat.describe_tool("Bash", "", {"command": "cat > f <<EOF\n" + "x\n" * 50}))
+    check("detaliu acord: modificare (vechi / nou)", acp_chat.permission_detail("Edit", {"file_path": "a.txt", "old_string": "unu", "new_string": "doi"}) == "a.txt\n− unu\n+ doi")
+    check("cardul de acord al unei comenzi nu are «Mereu»", perm[-1].get("noAlways") is False and "nota-agent.txt" in perm[-1].get("detail", ""), str(perm[-1]))
+
+    # istoricul rămâne după repornirea aplicației
+    saved = chat.file
+    check("istoricul e salvat pe disc", saved.is_file())
+    again = acp_chat.Chat(str(f["doc"]))
+    check("după repornire, conversația e la loc", len(again.events) > 5 and again.events[0]["type"] == "user" and again.needs_context,
+          len(again.events))
+    check("gândirea și cererile de acord nu se salvează", not any(e["type"] in ("thought", "perm") for e in again.events))
+
     chat.reset()
-    check("Conversație nouă: istoricul e gol", chat.since(0, {}, wait=0.1)["events"] == [])
+    check("Conversație nouă: istoricul e gol", chat.since(0, {}, wait=0.1)["events"] == [] and not saved.exists())
     acp_chat.shutdown()
     time.sleep(0.5)
     check("la închidere, agentul e oprit", not acp_chat.AGENT.alive())

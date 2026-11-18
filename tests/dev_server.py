@@ -13,6 +13,7 @@ port = next((a for a in sys.argv[2:] if a.isdigit()), "8765")
 os.environ.setdefault("FX_STATE", str(folder / "state"))
 os.environ.setdefault("FX_TOKEN", "test")
 os.environ["FX_PORT"] = port
+os.environ.setdefault("FX_NO_COMPONENTS", "1")  # testele nu descarcă componente
 if "--fake-claude" in sys.argv:  # chatul vorbește cu agentul simulat, nu cu Claude
     import json
     os.environ["FX_ACP_CMD"] = json.dumps([sys.executable, str(ROOT / "tests" / "fake_acp_agent.py")])

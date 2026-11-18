@@ -109,16 +109,28 @@ function applyAiName() {
   $('.rail [data-tool=region]').title = tr(`Captură zonă pentru ${n} (R)`)
   if (HINTS[S.tool]) $('#hint').textContent = tr(HINTS[S.tool])
 }
+// Unde pleacă un comentariu: cele două feluri de Claude sunt butoane la vedere (panoul din dreapta, prin ACP, sau
+// aplicația Claude Desktop); restul (Claude Code, ChatGPT, Gemini, clipboard) stau în lista „Altele”.
 function aiPicker(onChange) {
-  const sel = h('select', { class: 'aipick', title: 'Aplicația AI care primește comentariul (rămâne ținută minte)' },
-    ...S.app.apps.map(a => h('option', { value: a.id, title: a.hint, selected: a.id === S.app.ai }, a.name)))
-  sel.addEventListener('change', () => {
-    S.app.ai = sel.value
-    post('settings', { ai: sel.value }).catch(() => {})
+  const main = [['chat', 'Claude · panou'], ['claude', 'Claude Desktop']].filter(([id]) => S.app.apps.some(a => a.id === id))
+  const rest = S.app.apps.filter(a => !main.some(([id]) => id === a.id))
+  const box = h('span', { class: 'aiseg' })
+  const set = id => {
+    S.app.ai = id
+    post('settings', { ai: id }).catch(() => {})
     applyAiName()
+    draw()
     onChange?.()
-  })
-  return sel
+  }
+  const draw = () => {
+    const sel = h('select', { class: 'aipick', title: 'Altă aplicație AI (rămâne ținută minte)' },
+      h('option', { value: '' }, 'Altele'), ...rest.map(a => h('option', { value: a.id, title: a.hint, selected: a.id === S.app.ai }, a.name)))
+    sel.addEventListener('change', () => { if (sel.value) set(sel.value) })
+    box.replaceChildren(...main.map(([id, label]) => h('button', { type: 'button', class: S.app.ai === id ? 'on' : '', title: S.app.apps.find(a => a.id === id)?.hint,
+      onclick: () => set(id) }, label)), sel)
+  }
+  draw()
+  return box
 }
 function sentToast(r, fallback) {
   if (r.sendError) toast(r.sendError, { err: true, ms: 8000 })
@@ -1174,8 +1186,8 @@ function openLocalTool(t) {
       result.replaceChildren(showResult(r))
     } catch (err) {
       const box = h('div', { class: 'result err' }, err.message)
-      if (/LibreOffice/.test(err.message) && /Instalează/.test(err.message)) {
-        box.append(h('div', { class: 'rb' }, h('button', { class: 'primary', type: 'button', onclick: () => openDeps() }, 'Instalează LibreOffice')))
+      if (/LibreOffice/.test(err.message) && /în fundal/.test(err.message)) {
+        box.append(h('div', { class: 'rb' }, h('button', { class: 'secondary', type: 'button', onclick: () => openDeps() }, 'Vezi starea componentelor')))
       }
       result.replaceChildren(box)
     } finally {
@@ -1185,19 +1197,21 @@ function openLocalTool(t) {
 }
 // Uneltele care au rămas doar în Stirling: fără el, un mesaj cu ce e de instalat în loc de o eroare.
 const needsStirling = t => !t.local && !t.custom && !t.native && t.endpoint && !S.app.stirling
+const refreshStirling = async () => { if (!S.app.stirling) { try { S.app.stirling = (await api('info')).stirling } catch { /* rămâne cum era */ } } }
 
 async function openToolForm(t) {
   if (t.custom === 'certsign') return openCertSign()
   if (t.custom === 'bulksign') return openBulkSign()
   if (t.custom === 'organize') return openOrganize()
   if (t.local) return openLocalTool(t)
+  await refreshStirling()
   const body = h('div', { class: 'db' })
   const d = openDrawer(t.label, body)
   d.querySelector('.dh').prepend(h('button', { class: 'icon', title: 'Înapoi la unelte', onclick: () => openTools() }, icon('back')))
   if (needsStirling(t)) {
     return body.replaceChildren(h('div', { class: 'form' }, t.desc ? h('p', { class: 'desc' }, t.desc) : null,
-      h('div', { class: 'warn' }, 'Unealta asta vine din Stirling PDF (gratuit), care nu e instalat pe calculatorul ăsta.'),
-      h('div', { class: 'buttons' }, h('button', { class: 'primary', type: 'button', onclick: () => openDeps() }, 'Instalează Stirling PDF'))))
+      h('div', { class: 'warn' }, 'Unealta asta face parte din pachetul Stirling, care se instalează singur în fundal la prima pornire. Încearcă din nou în câteva minute.'),
+      h('div', { class: 'buttons' }, h('button', { class: 'secondary', type: 'button', onclick: () => openDeps() }, 'Vezi starea componentelor'))))
   }
   body.append(h('div', { class: 'form' }, h('p', { class: 'desc' }, h('span', { class: 'spin' }), 'Încarc unealta din Stirling PDF…')))
   let spec
@@ -1845,7 +1859,7 @@ function paletteItems() {
     act('Copiază calea fișierului', () => $('#btnCopyPath').click(), 'copy'),
     act('Toate uneltele PDF', () => openTools(), 'grid'),
     act('Vorbește cu Claude', () => openChat(), 'comment', 'A', 'chat ai intreaba asistent acp'),
-    act('Programe în plus', () => openDeps(), 'tool', '', 'libreoffice stirling node instaleaza dependente'),
+    act('Componente', () => openDeps(), 'tool', '', 'libreoffice stirling node claude instaleaza dependente programe'),
     act('Ghid de pornire', () => openOnboarding(), null, '', 'onboarding ajutor help tutorial bun venit'),
   ]
   const groups = Object.fromEntries(GROUPS.map(g => [g.id, g.label]))
@@ -2072,7 +2086,7 @@ function heartbeat() {
     // Ecranul de start: aplicația rămâne deschisă și când renunți la alegerea fișierului.
     main.append(h('div', { class: 'empty start' },
       h('div', { class: 'start-card' }, h('img', { src: '/editor/icon.png', alt: '' }), h('h1', {}, 'PDF Sign'),
-        h('div', { class: 'start-row' }, h('button', { class: 'primary big', onclick: () => openOther() }, 'Alege un PDF'), h('span', { class: 'muted' }, 'Ctrl+O')),
+        h('button', { class: 'primary big', onclick: () => openOther() }, 'Alege un PDF'), h('kbd', {}, 'Ctrl+O'),
         h('button', { class: 'linkbtn', type: 'button', onclick: () => openOnboarding() }, 'Ghid de pornire'))))
     loadLib().catch(() => {})
     if (Q.get('pick') && S.app.onboarded) openOther()

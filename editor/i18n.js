@@ -9,6 +9,13 @@ export function setLang(l) {
 }
 
 const EN = {
+  'Claude · panou': 'Claude · sidebar', 'Altele': 'Others', 'Altă aplicație AI (rămâne ținută minte)': 'Another AI app (remembered)',
+  'Componente': 'Components', 'Vezi starea componentelor': 'See component status',
+  'Unealta asta face parte din pachetul Stirling, care se instalează singur în fundal la prima pornire. Încearcă din nou în câteva minute.':
+    'This tool is part of the Stirling pack, which installs by itself in the background on first start. Try again in a few minutes.',
+  'LibreOffice, cel care face conversia, se instalează singur în fundal la prima pornire. Încearcă din nou în câteva minute (starea e la Ctrl+K → „Componente”).':
+    'LibreOffice, which does the conversion, installs by itself in the background on first start. Try again in a few minutes (status: Ctrl+K → “Components”).',
+  'Uneltele Stirling se instalează singure în fundal: încearcă din nou în câteva minute.': 'The Stirling tools install by themselves in the background: try again in a few minutes.',
   'Deschide întâi un PDF.': 'Open a PDF first.',
   'Alege un PDF': 'Choose a PDF',
   'Unealta asta vine din Stirling PDF (gratuit), care nu e instalat pe calculatorul ăsta.': 'This tool comes from Stirling PDF (free), which is not installed on this computer.',

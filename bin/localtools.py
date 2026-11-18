@@ -308,8 +308,8 @@ if ('.doc', '.docx', '.rtf', '.odt', '.txt', '.docm', '.dot', '.dotx' -contains 
 """
 
 
-NEED_OFFICE = ("Pentru Word / Excel → PDF trebuie LibreOffice (gratuit) sau Microsoft Office. "
-               "Apasă „Instalează LibreOffice” mai jos: se instalează singur, fără alte întrebări.")
+NEED_OFFICE = ("LibreOffice, cel care face conversia, se instalează singur în fundal la prima pornire. "
+               "Încearcă din nou în câteva minute (starea e la Ctrl+K → „Componente”).")
 _MS_OFFICE = {"ok": None}  # None = încă nu știm dacă e instalat Microsoft Office
 
 

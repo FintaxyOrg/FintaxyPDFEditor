@@ -367,9 +367,9 @@ body[data-tool=sigbox] .page { cursor: crosshair; }
 .msg.bot th, .msg.bot td { border: 1px solid var(--line); padding: 3px 7px; text-align: left; }
 .msg.bot a { color: var(--accent-ink); }
 .msg.thought { color: var(--muted); font-size: 12px; padding: 0 4px; } .msg.thought summary { cursor: pointer; } .msg.thought div { white-space: pre-wrap; margin-top: 4px; }
-.msg.tool { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); padding: 2px 4px; }
-.msg.tool .tdot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; } .msg.tool.bad .tdot { background: var(--danger); }
-.msg.tool .spin { margin: 0; }
+.msg.tcall { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); padding: 2px 4px; }
+.msg.tcall .tdot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; } .msg.tcall.st-bad .tdot { background: var(--danger); }
+.msg.tcall .spin { margin: 0; }
 .msg.perm { border: 1px solid #f0d58a; background: #fffaea; }
 .msg.perm.allowed { border-color: #cfe9dc; background: #f6fcf9; } .msg.perm.denied, .msg.perm.cancelled { border-color: var(--line); background: #f6f7fa; color: var(--muted); }
 .msg.perm .ptitle { margin: 2px 0; } .msg.perm code { display: block; font: 12px Consolas, monospace; color: #4b5266; margin: 4px 0; overflow-wrap: anywhere; }
@@ -407,3 +407,106 @@ kbd { display: inline-block; min-width: 22px; text-align: center; padding: 1px 6
 .start-row { display: flex; align-items: center; gap: 12px; }
 button.primary.big { height: 40px; padding: 0 22px; font-size: 14.5px; border-radius: 11px; }
 .ob:focus { outline: none; }
+
+/* ---- componentele: starea nu mai iese din rând, bară de progres, eroare ---- */
+.dep { flex-wrap: wrap; }
+.dep-name { flex: 1 1 auto; }
+.dep-state { flex: 0 1 auto; max-width: 100%; min-width: 0; overflow-wrap: anywhere; justify-content: flex-end; }
+.dep-state .spin { margin: 0 2px 0 0; flex: none; }
+.dep.bad { border-color: #f4c7d0; background: #fff8f9; } .dep.bad .dep-state { color: #9b2338; }
+.dep-bar { flex: 1 0 100%; height: 4px; border-radius: 3px; background: #e6e9f0; overflow: hidden; }
+.dep-bar span { display: block; height: 100%; background: var(--accent); transition: width .4s; }
+.chat-setup .ttl { margin: 0; }
+.start-card { gap: 12px; } .start-card kbd { color: var(--muted); }
+
+/* ---- chatul: se derulează mereu, comenzile lungi nu mai umplu panoul ---- */
+.chat { flex: 1 1 0; min-height: 0; height: auto; position: relative; }
+.chat-list { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.chat-list > * { flex: none; }
+.msg.tcall { align-items: flex-start; } .msg.tcall .tdot, .msg.tcall .spin { margin-top: 4px; }
+.msg.tcall .ttext { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-width: 0; }
+.msg.perm .ptitle { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.msg.perm code { max-height: 132px; overflow: auto; white-space: pre-wrap; background: #fff; border: 1px solid #eadfb8; border-radius: 7px; padding: 6px 8px; }
+.msg.perm code.done { max-height: 44px; border-color: var(--line); }
+.msg.bot pre { max-height: 260px; }
+.msg.thought div { max-height: 180px; overflow: auto; }
+.chat-jump { position: absolute; right: 22px; bottom: 74px; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); background: #fff; box-shadow: var(--shadow); display: flex; align-items: center; justify-content: center; }
+.chat-jump svg.i { width: 15px; height: 15px; }
+.chat-in { flex: none; }
+/* semnul Claude pe butonul de chat */
+.rail [data-panel=chat] svg.i { width: 20px; height: 20px; }
+.claude-mark path { stroke: #d97757; stroke-width: 2.1; stroke-linecap: round; }
+.rail [data-panel=chat].on .claude-mark path { stroke: #fff; }
+/* alegerea destinației unui comentariu */
+.aiseg { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.aiseg button { height: 26px; padding: 0 9px; border: 1px solid var(--line); background: #fff; border-radius: 999px; font-size: 12.5px; white-space: nowrap; }
+.aiseg button.on { background: var(--accent-soft); border-color: #b9c9f5; color: var(--accent-ink); font-weight: 600; }
+.aiseg .aipick { max-width: 92px; }
+.pop { width: 340px; }
+.pop .row { flex-wrap: wrap; }
+
+/* ---- chatul, după „Ask AI” din CRM ---- */
+.chat { --c-panel: #f6f8fa; --c-border: #d1d9e0; --c-active: rgba(129, 139, 152, .16); --c-hover: rgba(129, 139, 152, .10);
+  --c-text2: #59636e; --c-text3: #818b98; --c-ok: #1a7f37; --c-danger: #d1242f;
+  flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; position: relative; font-size: 14px; line-height: 20px; }
+.chat-thread { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 16px 8px; display: flex; flex-direction: column; gap: 14px; outline: none; }
+.chat-thread > * { flex: none; max-width: 100%; }
+.ct-q { align-self: flex-end; max-width: 85%; background: var(--c-active); border-radius: 12px; padding: 8px 12px; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 6px; }
+.ct-a { overflow-wrap: anywhere; }
+.ct-a p { margin: 0 0 10px; } .ct-a > :last-child { margin-bottom: 0; }
+.ct-a ul, .ct-a ol { padding-left: 18px; margin: 0 0 10px; } .ct-a li { margin: 0 0 4px; } .ct-a li::marker { color: var(--c-text2); }
+.ct-a h4 { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+.ct-a code { background: var(--c-active); border-radius: 4px; padding: 1px 4px; font: 12.5px ui-monospace, Consolas, monospace; }
+.ct-a pre { margin: 0 0 10px; padding: 10px 12px; background: var(--c-panel); box-shadow: inset 0 0 0 1px var(--c-border); border-radius: 8px; overflow: auto; max-height: 280px; font: 12.5px/1.5 ui-monospace, Consolas, monospace; }
+.ct-a table { display: block; overflow-x: auto; border-collapse: collapse; margin: 0 0 10px; font-size: 13px; box-shadow: inset 0 0 0 1px var(--c-border); border-radius: 8px; }
+.ct-a th, .ct-a td { padding: 6px 10px; border-bottom: 1px solid var(--c-border); text-align: left; } .ct-a th { color: var(--c-text2); font-weight: 500; }
+.ct-a a { color: #0969da; }
+.ct-a.streaming > :last-child::after { content: ""; display: inline-block; width: 7px; height: 14px; margin-left: 2px; vertical-align: -2px; background: var(--c-text3); animation: ct-blink 1s steps(2, start) infinite; }
+@keyframes ct-blink { to { visibility: hidden; } }
+.ct-thinking { color: var(--c-text3); font-size: 13px; }
+.shimmer { background: linear-gradient(90deg, var(--c-text3) 0%, var(--ink) 50%, var(--c-text3) 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: ct-shimmer 1.6s linear infinite; }
+@keyframes ct-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.ct-thought { margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ct-tool { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 6px; background: var(--c-panel); box-shadow: inset 0 0 0 1px var(--c-border); color: var(--c-text2); font-size: 13px; margin-top: -8px; }
+.ct-tool svg.i { width: 12px; height: 12px; flex: none; color: var(--c-text3); }
+.ct-tool .tt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ct-tool.st-ok svg.i:last-child { color: var(--c-ok); width: 13px; height: 13px; }
+.ct-tool.st-bad svg.i:last-child { color: var(--c-danger); width: 13px; height: 13px; } .ct-tool.st-bad .tt { text-decoration: line-through; }
+.ct-tool .spin { width: 11px; height: 11px; margin: 0; border-width: 1.5px; flex: none; }
+.ct-plan { box-shadow: inset 0 0 0 1px var(--c-border); border-radius: 8px; padding: 8px 10px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.ct-plan .pl { display: flex; align-items: baseline; gap: 8px; }
+.ct-plan .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1.5px var(--c-text3); }
+.ct-plan .in_progress { font-weight: 500; } .ct-plan .in_progress .dot { background: var(--accent); box-shadow: none; }
+.ct-plan .completed { color: var(--c-text3); text-decoration: line-through; } .ct-plan .completed .dot { background: var(--c-ok); box-shadow: none; }
+.ct-perm { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); box-shadow: inset 0 0 0 1px rgba(47, 107, 255, .35); }
+.ct-perm .ph { display: flex; gap: 8px; align-items: flex-start; } .ct-perm .ph svg.i { width: 15px; height: 15px; color: var(--accent); flex: none; margin-top: 2px; }
+.ct-perm .ph span { min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ct-perm-input { margin: 0; max-height: 140px; overflow: auto; background: #fff; box-shadow: inset 0 0 0 1px var(--c-border); border-radius: 8px; padding: 8px 10px; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ct-perm-btns { display: flex; flex-wrap: wrap; gap: 6px; } .ct-perm-btns button { height: 28px; border-radius: 8px; padding: 0 10px; }
+.ct-err { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; color: var(--c-text2); } .ct-err > span::before { content: "⚠ "; }
+.ct-stopped { color: var(--c-text3); font-size: 13px; margin-top: -6px; }
+.ct-extra { display: flex; flex-direction: column; gap: 8px; margin-top: -8px; }
+.ct-actions { display: flex; gap: 6px; align-items: center; } .ct-actions button.icon { width: 24px; height: 24px; min-width: 24px; border-radius: 6px; color: var(--c-text3); }
+.ct-actions svg.i { width: 14px; height: 14px; }
+.ct-act-btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--c-border); background: #fff; font-size: 13px; }
+.ct-act-btn svg.i { width: 13px; height: 13px; }
+.ct-follow { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.ct-follow button, .ask-suggest { display: flex; align-items: flex-start; gap: 6px; min-height: 28px; padding: 4px 10px 4px 8px; border: 0; background: none; border-radius: 8px; color: var(--c-text2); line-height: 18px; text-align: left; font-size: 13.5px; }
+.ct-follow button:hover, .ask-suggest:hover { background: var(--c-hover); color: var(--ink); }
+.ct-follow svg.i, .ask-suggest svg.i { width: 13px; height: 13px; flex: none; margin-top: 3px; color: var(--c-text3); }
+.chat-empty { margin: auto 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 0; }
+.chat-empty .ce-ico { width: 44px; height: 44px; border-radius: 12px; background: var(--c-panel); box-shadow: inset 0 0 0 1px var(--c-border); display: flex; align-items: center; justify-content: center; margin-bottom: 8px; }
+.chat-empty .ce-ico svg.i { width: 24px; height: 24px; } .chat-empty b { font-size: 17px; } .chat-empty .muted { margin-bottom: 8px; }
+.chat-composer { flex: none; margin: 8px 12px 12px; border-radius: 16px; background: #fff; box-shadow: inset 0 0 0 1px #c3ccd6; padding: 10px 8px 8px 12px; transition: box-shadow .12s; cursor: text; }
+.chat-composer:focus-within { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--accent-soft); }
+.chat-composer textarea { display: block; width: 100%; border: 0; outline: none; resize: none; font: inherit; line-height: 20px; min-height: 40px; max-height: 220px; padding: 0; background: transparent; color: var(--ink); }
+.chat-composer textarea::placeholder { color: var(--c-text3); }
+.cc-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.cc-mode { height: 26px; border: 0; background: transparent; border-radius: 6px; padding: 0 4px; font: inherit; font-size: 13px; font-weight: 500; color: var(--c-text2); cursor: pointer; }
+.cc-mode:hover { background: var(--c-hover); }
+.cc-send { width: 28px; height: 28px; border-radius: 8px; border: 0; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; flex: none; }
+.cc-send svg.i { width: 15px; height: 15px; } .cc-send.stop { background: var(--ink); } .cc-send.stop svg.i { width: 11px; height: 11px; fill: currentColor; }
+.cc-send:disabled { opacity: .4; }
+.chat-jump { bottom: 118px; }
+.rail [data-panel=chat].on { background: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .shimmer, .ct-a.streaming > :last-child::after { animation-duration: 1ms; } }

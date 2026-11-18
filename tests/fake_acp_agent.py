@@ -49,7 +49,9 @@ def ask(method, params):
 def prompt(rid, p):
     sid = p["sessionId"]
     body = " ".join(b.get("text", "") for b in p.get("prompt") or [])
-    low = body.lower()
+    # doar mesajul omului hotărăște scenariul, nu și istoricul pus în față la o sesiune nouă
+    low = body.rsplit("]\n\n", 1)[-1].lower()
+    SESSIONS[sid]["context"] = "Earlier in this conversation" in body
     cwd = SESSIONS[sid]["cwd"]
     if "login" in low:
         text(sid, "Failed to authenticate: OAuth session expired and could not be refreshed")
@@ -73,6 +75,26 @@ def prompt(rid, p):
             update(sid, {"sessionUpdate": "tool_call_update", "toolCallId": "t-write", "status": "failed"})
             text(sid, "Nu am scris nimic: nu mi-ai dat acordul.")
         return send({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
+    if "lung" in low:
+        # ca o tură adevărată cu script lipit în comandă: titlu uriaș, comandă lungă la acord, răspuns lung cu cod și tabel
+        script = "import sys\n" + "\n".join(f"print('rand {i} cu text destul de lung ca sa se rupa pe mai multe randuri in panou')" for i in range(60))
+        cmd = 'mkdir -p "$TEMP/oferta" && cat > "$TEMP/oferta/build.py" <<EOF\n' + script + "\nEOF\npython build.py && echo OK"
+        tc = {"toolCallId": "t-long", "title": cmd, "kind": "execute", "status": "pending", "rawInput": {"command": cmd},
+              "_meta": {"claudeCode": {"toolName": "Bash"}}}
+        update(sid, {"sessionUpdate": "tool_call", **tc})
+        ask("session/request_permission", {"sessionId": sid, "toolCall": tc, "options": [
+            {"optionId": "allow", "kind": "allow_once", "name": "Allow"}, {"optionId": "reject", "kind": "reject_once", "name": "Reject"}]})
+        update(sid, {"sessionUpdate": "tool_call_update", "toolCallId": "t-long", "status": "completed"})
+        text(sid, "## Rezultat\n\nUn paragraf **lung** " + "cu multe cuvinte " * 30 + "\n\n")
+        text(sid, "| Coloana A | Coloana B | Coloana C cu nume lung |\n|---|---|---|\n| 1 | doi | " + "x" * 80 + " |\n\n")
+        text(sid, "```python\n" + script[:900] + "\n```\n\n")
+        for i in range(1, 80):
+            if sid in CANCEL:
+                CANCEL.discard(sid)
+                return send({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "cancelled"}})
+            text(sid, f"- punctul {i} din listă, cu un text care se întinde pe rând\n")
+            time.sleep(0.08)
+        return send({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
     if "numără" in low or "numara" in low:
         for i in range(1, 400):
             if sid in CANCEL:
@@ -87,7 +109,11 @@ def prompt(rid, p):
     update(sid, {"sessionUpdate": "tool_call_update", "toolCallId": "t-read", "status": "completed"})
     for part in ("Contractul are numărul **42** ", "și e din 18.11.2026. ", f"Folder de lucru: {cwd}. ",
                  f"MCP: {','.join(m['name'] for m in SESSIONS[sid]['mcp']) or 'niciunul'}. ",
-                 f"Sistem: {'PDF Sign' in SESSIONS[sid]['system']}."):
+                 f"Sistem: {'PDF Sign' in SESSIONS[sid]['system']}. ", f"Istoric: {SESSIONS[sid].get('context')}."):
+        text(sid, part)
+        time.sleep(0.05)
+    # sugestiile de continuare, în bucăți (ca să se vadă că eticheta nu clipește în pagină cât se scrie)
+    for part in ("\n<follo", "wups>\nCine semnează contractul?\n- Când expiră?\n", "</followups>"):
         text(sid, part)
         time.sleep(0.05)
     send({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})

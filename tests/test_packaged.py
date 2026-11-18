@@ -2,9 +2,9 @@
 versiunea, limbile OCR din pachet, semnătura electronică (certificat de test .pfx), toate uneltele locale,
 chatul (agent simulat), închiderea singură după ultima fereastră.
 
-  python tests/test_packaged.py [FOLDER] [--stirling]
+  python tests/test_packaged.py [FOLDER] [--stirling] [--sleep]     (--sleep: și testul de 3 minute cu pagina adormită)
 
-Deschide o fereastră a editorului (Edge) cât durează testul și o închide la final.
+Fereastra editorului (Edge) se deschide în afara ecranului cât durează testul și e închisă la final.
 """
 import json
 import os
@@ -62,7 +62,7 @@ def main(folder: Path):
         print(f"Nu există {exe}: rulează întâi app\\build.ps1")
         return 2
     f = make_fixtures.make(folder / "docs")
-    env = {**os.environ, "FX_STATE": str(folder / "state"), "FX_PORT": PORT, "FX_TOKEN": "test",
+    env = {**os.environ, "FX_STATE": str(folder / "state"), "FX_PORT": PORT, "FX_TOKEN": "test", "FX_NO_COMPONENTS": "1", "FX_WINDOW_POS": "-3000,100",
            "FX_TEST_PFX": str(f["pfx_ec"]), "FX_TEST_PFX_PASS": make_fixtures.PFX_PASS,
            "FX_ACP_CMD": json.dumps([sys.executable, str(ROOT / "tests" / "fake_acp_agent.py")])}
     (folder / "state").mkdir(parents=True, exist_ok=True)
@@ -174,7 +174,7 @@ def start_screen(folder: Path, exe: Path):
     PORT = "8792"
     state = folder / "state-start"
     state.mkdir(parents=True, exist_ok=True)
-    env = {**os.environ, "FX_STATE": str(state), "FX_PORT": PORT, "FX_TOKEN": "test"}
+    env = {**os.environ, "FX_STATE": str(state), "FX_PORT": PORT, "FX_TOKEN": "test", "FX_NO_COMPONENTS": "1", "FX_WINDOW_POS": "-3000,100"}
     env.pop("FX_TEST_PFX", None)
     print("== pornire fără PDF (prima folosire) ==")
     app = subprocess.Popen([str(exe)], env=env, cwd=str(exe.parent))
@@ -191,6 +191,32 @@ def start_screen(folder: Path, exe: Path):
         check("fără PDF: aplicația pornește pe ecranul de start", info.get("ok") and not info.get("onboarded"), info)
         time.sleep(8)
         check("fără PDF: aplicația rămâne deschisă", app.poll() is None)
+        if "--sleep" in sys.argv:
+            # Pagina „adormită” (fereastra acoperită, calculator pe baterie): pagina nu mai dă semn de viață.
+            # O simulăm înghețând procesele Edge ale ferestrei mai mult decât răbdarea serverului (150 s + 6 s);
+            # aplicația trebuie să rămână pornită cât fereastra există.
+            import ctypes
+            ps2 = ("Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'msedge.exe' -and $_.CommandLine -match 'state-start' } "
+                   "| ForEach-Object { $_.ProcessId }")
+            out = subprocess.run(["powershell", "-NoProfile", "-Command", ps2], capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            pids = [int(x) for x in out.stdout.split() if x.isdigit()]
+            nt, k32 = ctypes.WinDLL("ntdll"), ctypes.WinDLL("kernel32")
+            k32.OpenProcess.restype = ctypes.c_void_p
+            handles = [h for h in (k32.OpenProcess(0x0800, False, pid) for pid in pids) if h]
+            for h in handles:
+                nt.NtSuspendProcess(ctypes.c_void_p(h))
+            print(f"      {len(handles)} procese Edge înghețate; aștept 175 s…", flush=True)
+            time.sleep(175)
+            alive = app.poll() is None
+            try:
+                alive = alive and api("GET", "info", timeout=5).get("ok")
+            except Exception:
+                alive = False
+            for h in handles:
+                nt.NtResumeProcess(ctypes.c_void_p(h))
+                k32.CloseHandle(ctypes.c_void_p(h))
+            check("pagina adormită 175 s: aplicația rămâne pornită cât fereastra există", bool(handles) and alive)
+            time.sleep(3)
         ps = (f"Get-CimInstance Win32_Process | Where-Object {{ $_.Name -eq 'msedge.exe' -and $_.CommandLine -match '--app=http://127.0.0.1:{PORT}/' }} "
               "| ForEach-Object { $_.CommandLine }")
         r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)

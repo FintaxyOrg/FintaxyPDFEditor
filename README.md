@@ -61,15 +61,24 @@ Un PDF deja semnat (de exemplu o declarație semnată de alt administrator) prim
 
 Butonul cu pătrățele din stânga (sau **Ctrl+K**) arată toate uneltele. Cele obișnuite merg direct, fără nimic instalat; rezultatul apare lângă PDF, cu un sufix (`_unit`, `_comprimat`, `_word.docx` etc.). Word / Excel → PDF are nevoie de Microsoft Office.
 
-Word / Excel → PDF merge cu Microsoft Office sau, fără el, cu **LibreOffice** (pornit fără nicio fereastră). Uneltele marcate **Stirling** (conversii rare) au nevoie de [Stirling PDF](https://www.stirlingpdf.com/).
+Word / Excel → PDF merge cu Microsoft Office sau, fără el, cu **LibreOffice** (pornit fără nicio fereastră). Uneltele marcate **Stirling** sunt conversii și verificări rare.
 
-**Programe în plus** (Ctrl+K → „Programe în plus”): LibreOffice, Stirling PDF și Node.js se instalează **din aplicație**, cu un buton, fără terminal și fără întrebări (winget, pe tăcute; Windows poate cere o singură confirmare de administrator).
+### Componente
+
+LibreOffice, Stirling PDF, Node.js și legătura cu Claude **fac parte din PDF Sign**: nu instalezi nimic. La prima pornire aplicația le aduce singură, în fundal, de la sursa lor oficială, în folderul ei (`%LOCALAPPDATA%\fintaxy-pdf-sign\components`), fără drepturi de administrator și fără terminal (~750 MB de descărcat, ~2 GB pe disc; poți lucra între timp). Ce e deja instalat pe calculator e folosit de acolo și nu se mai descarcă. Starea lor: **Ctrl+K → „Componente”**; un buton „Reîncearcă” apare doar dacă ceva n-a reușit (de exemplu fără internet).
+
+De ce nu sunt în kit: Claude Code nu poate fi redistribuit de noi, iar pentru celelalte rămânem curați cu licențele; kitul rămâne de ~105 MB în loc de peste 1 GB.
 
 ### Claude în editor
 
-- Butonul cu steluțe din stânga (tasta **A**) deschide chatul. Prima dată arată ce lipsește, fiecare cu butonul lui: **Node.js**, **legătura cu Claude** (adaptorul ACP, instalat în folderul aplicației) și **contul Claude** (o fereastră în care scrii `/login`, o singură dată).
+Făcut după „Ask AI” din Fintaxy CRM, prin ACP (Agent Client Protocol), pe abonamentul tău Claude.
+
+- Butonul cu semnul Claude din stânga (tasta **A** sau **Ctrl+J**) deschide chatul. Singurul lucru pe care îl faci tu, o dată: **Conectează** (o fereastră în care scrii `/login`).
+- Claude vede PDF-ul deschis și pagina pe care ești. Fiecare unealtă folosită apare ca un rând („Citește contract.pdf”, „Rulează o comandă: …”).
+- **Manual / Auto** (în compozitor): în Manual, orice schimbare îți cere acordul într-un card cu detaliul acțiunii (**Permite**, **Mereu în acest chat**, **Refuză**; o cerere fără răspuns e refuzată după 3 minute). În Auto, Claude decide singur la acțiunile de rutină.
+- Sub ultimul răspuns: **sugestii de continuare**, copiere și, după o eroare sau o oprire, **Reîncearcă**. Conversația fiecărui PDF se păstrează între porniri.
 - **Conexiuni** (iconița cu ștecher): servere MCP prin care Claude ajunge la alte sisteme. Pentru Fintaxy CRM: în CRM, Setări → Conectare Claude, copiezi adresa și jetonul.
-- Comentariile (tasta **C**) și capturile de zonă (**R**) merg la „Claude, aici în PDF Sign” sau la aplicația aleasă (Claude Desktop, Claude Code, ChatGPT, Gemini, clipboard).
+- Comentariile (tasta **C**) și capturile de zonă (**R**) merg la **Claude · panou** sau la **Claude Desktop** (două butoane în fereastra comentariului); celelalte aplicații sunt la „Altele”.
 
 ### Scurtături
 
@@ -78,7 +87,7 @@ Word / Excel → PDF merge cu Microsoft Office sau, fără el, cu **LibreOffice*
 | Ctrl+K | caută orice unealtă |
 | P | organizează paginile |
 | S / T / E | semnătură olografă / text / editează textul |
-| A | chatul cu Claude |
+| A / Ctrl+J | chatul cu Claude |
 | C / R | comentariu / captură de zonă pentru Claude |
 | Ctrl+S / Ctrl+O | salvează / deschide alt PDF |
 | Ctrl+P | printează documentul |
@@ -125,7 +134,11 @@ Toate rulează cu Python-ul din `.venv-build`, pe documente făcute pe loc, înt
 .venv-build\Scripts\python.exe tests\dev_server.py C:\tmp\t 8765   # serverul de test (lasă-l pornit), apoi:
 .venv-build\Scripts\python.exe tests\test_tools.py C:\tmp\t 8765   # editorul + toate uneltele locale + toate uneltele Stirling
 .venv-build\Scripts\python.exe tests\test_chat_live.py            # chatul pe viu (folosește abonamentul Claude al calculatorului)
+.venv-build\Scripts\python.exe tests\test_components.py C:\tmp\c  # componentele aduse ca pe un calculator curat (~750 MB, ~8 min)
+.venv-build\Scripts\python.exe tests\test_packaged.py             # aplicația construită (dist\PDF Sign), cap-coadă
 ```
+
+`tests\ui_audit.js` se lipește în consola editorului (sau se rulează cu un instrument de automatizare): deschide fiecare panou și fiecare formular de unealtă și caută elemente ieșite din panou, text tăiat, panouri care nu se derulează și texte netraduse.
 
 Ce nu pot verifica testele: PIN-ul adevărat al unui card (îl scrie doar omul, în fereastra Windows) și instalarea pe un calculator curat.
 
