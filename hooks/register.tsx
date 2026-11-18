@@ -7,12 +7,13 @@ import { FLUENT } from './icons'
 // Sub fiecare PDF pomenit în chat: previzualizarea paginii și butoanele Deschide în panou, Semnează,
 // Explorer și More. Editorul (semnături, text, editarea textului, comentarii pentru Claude, uneltele
 // Stirling PDF) e o pagină locală servită de bin/editor_server.py și se deschide în panoul browserului
-// din aplicație; dacă panoul nu se poate deschide, într-o fereastră separată.
+// din aplicație, adus în față cu `show_pane`; dacă panoul nu se poate deschide sau arăta, într-o fereastră separată.
 // Un card desenat în afara casetei mesajului e tăiat de desktop, deci meniurile stau în card.
 
 // Biblioteca de semnături o alege helper-ul (settings.json sau Documente\Semnaturi PDF Sign), iar căile de pe
 // calculatorul ăsta (jurnalul, helper-ul de meniu) le dă `fx_sign.py paths`: mod-ul merge la oricine îl instalează.
 const BROWSER_SERVER = 'Claude_Browser'
+const VIEW_SERVER = 'ccd_view' // aduce panoul Browser în fața utilizatorului
 const MAX_PDFS = 6
 
 // Calea până la „.pdf”, cu spații; și ținta unui link markdown.
@@ -252,8 +253,34 @@ export function editorUrl(s: Server, path: string, opts: EditorOpts = {}) {
   return `http://127.0.0.1:${s.port}/?${q}`
 }
 
-// Panoul browserului din aplicație; altfel o fereastră Edge separată.
-async function openEditor($: Engine, path: string, opts: EditorOpts = {}) {
+export type Shown = 'shown' | 'popped' | 'hidden'
+
+// Ce a răspuns `show_pane`: panoul e acum în față, stă într-o fereastră a lui, sau n-a putut fi arătat
+// (sesiunea nu e deschisă în nicio fereastră, panoul nu are pagina etc.).
+export function shownFrom(r: { isError?: boolean; content?: unknown }): Shown {
+  const text = JSON.stringify(r.content ?? '')
+  if (r.isError) return 'hidden'
+  if (/window of its own|own window|popped/i.test(text)) return 'popped'
+  if (/isn't open|is not open|not open in any|left alone|nothing|no page|not shown|cannot|can't|unknown|\\"views\\":\[\]/i.test(text)) return 'hidden'
+  return 'shown'
+}
+
+// `preview_start` deschide tab-ul, dar panoul Browser poate rămâne ascuns: îl aducem în față.
+async function showPanel($: Engine): Promise<Shown> {
+  try {
+    const shown = shownFrom(await $.mcp.call(VIEW_SERVER, 'show_pane', { pane: 'preview' }))
+    await log($, `show_pane: ${shown}`)
+    return shown
+  } catch (err) {
+    await log($, `show_pane failed: ${errText(err)}`)
+    return 'hidden'
+  }
+}
+
+export type Where = 'panel' | 'popped' | 'window'
+
+// Panoul browserului din aplicație, adus în față; altfel o fereastră Edge separată.
+async function openEditor($: Engine, path: string, opts: EditorOpts = {}): Promise<Where> {
   const s = await ensureServer($)
   const url = editorUrl(s, path, opts)
   let blocked = false
@@ -263,7 +290,12 @@ async function openEditor($: Engine, path: string, opts: EditorOpts = {}) {
       const r = await $.mcp.call(BROWSER_SERVER, 'preview_start', { url })
       if (r.isError) throw new Error(JSON.stringify(r.content).slice(0, 300))
       await log($, `opened in panel: ${fileName(path)} (attempt ${attempt})`)
-      return 'panel'
+      const shown = await showPanel($)
+      if (shown === 'shown') return 'panel'
+      if (shown === 'popped') return 'popped'
+      // Panoul a rămas ascuns: editorul se deschide și într-o fereastră, ca omul să-l vadă imediat.
+      await helper($, ['window', url])
+      return 'window'
     } catch (err) {
       blocked = /classifier|auto mode|permission|denied|refused/i.test(errText(err))
       await log($, `panel attempt ${attempt} failed: ${errText(err)}`)
@@ -353,11 +385,17 @@ async function patch($: Engine, path: string, fn: (c: Card) => Partial<Card>) {
   })
 }
 
+export function whereNote(where: Where): string {
+  if (where === 'panel') return 'Editorul e deschis în panoul din dreapta'
+  if (where === 'popped') return 'Editorul e în fereastra separată a panoului Browser'
+  return 'Editorul e deschis într-o fereastră separată'
+}
+
 async function openPanel($: Engine, path: string, card: Card, opts: EditorOpts = {}) {
   await patch($, path, () => ({ mode: 'placing', note: 'Deschid editorul…', error: '' }))
   try {
     const where = await openEditor($, card.current, { page: card.page, ...opts })
-    await patch($, path, () => ({ mode: 'view', note: where === 'panel' ? 'Editorul e deschis în panoul din dreapta' : 'Editorul e deschis într-o fereastră', error: '' }))
+    await patch($, path, () => ({ mode: 'view', note: whereNote(where), error: '' }))
   } catch (err) {
     await patch($, path, () => ({ mode: 'view', note: '', error: errText(err) }))
   }

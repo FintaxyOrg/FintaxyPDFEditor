@@ -129,6 +129,47 @@ def page_png(path: str, n: int, width: int) -> bytes:
         return page.get_pixmap(matrix=fitz.Matrix(z, z), alpha=False).tobytes("png")
 
 
+def sig_indexes(items: list) -> list:
+    """Semnătura vine din editor ca fișier din bibliotecă; stamp/apply_items vor poziția ei în listă."""
+    lib = library(LIB)
+    for it in items:
+        if it.get("type") == "sig" and not isinstance(it.get("sig"), int):
+            f = lib_file(str(it["sig"]))
+            if not f:
+                raise ValueError(f"Semnătura nu mai e în bibliotecă: {it['sig']}")
+            it["sig"] = lib.index(f)
+    return lib
+
+
+# ---------- printarea ----------
+# Butonul de printare din editor: o copie în memorie a PDF-ului, cu ce e pus în editor și nesalvat încă,
+# scris exact ca la salvare; pagina o cere apoi pagină cu pagină, ca imagini de tipar.
+PRINTS: dict = {}
+
+
+def print_prepare(path: str, items: list) -> dict:
+    with LOCK:
+        doc = fitz.open(stream=Path(path).read_bytes(), filetype="pdf")
+        if items and not fx_sign.is_signed(doc):
+            fx_sign.apply_items(doc, items, sig_indexes(items))
+        pid = secrets.token_hex(8)
+        PRINTS[pid] = doc
+        for k in list(PRINTS)[:-3]:  # doar ultimele printări
+            PRINTS.pop(k).close()
+        return {"ok": True, "id": pid, "pages": [{"w": p.rect.width, "h": p.rect.height} for p in doc]}
+
+
+def print_png(pid: str, n: int, dpi: int) -> bytes:
+    with LOCK:
+        doc = PRINTS.get(pid)
+        if doc is None:
+            raise RuntimeError("Printarea a expirat; apasă din nou Printează.")
+        page = doc[n - 1]
+        z = max(72, min(dpi, 300)) / 72
+        z = min(z, 5000 / max(page.rect.width, page.rect.height))  # pagini foarte mari: cel mult 5000 px
+        return page.get_pixmap(matrix=fitz.Matrix(z, z), alpha=False).tobytes("png")
+
+
 def color_hex(c: int) -> str:
     return "#%06x" % (c & 0xFFFFFF)
 
@@ -841,6 +882,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.json(doc_info(q["path"]))
             if path == "/api/page":
                 return self.send(200, "image/png", page_png(q["path"], int(q["n"]), int(q.get("w", 1600))), cache=True)
+            if path == "/api/printpage":
+                return self.send(200, "image/png", print_png(q["id"], int(q["n"]), int(q.get("dpi", 300))), cache=True)
             if path == "/api/runs":
                 return self.json(page_runs(q["path"], int(q["n"])))
             if path == "/api/fields":
@@ -901,13 +944,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 with LOCK:
                     src = Path(b["path"])
                     items = b.get("items") or []
-                    lib = library(LIB)
-                    for it in items:  # semnătura vine ca fișier din bibliotecă; stamp vrea poziția ei
-                        if it.get("type") == "sig" and not isinstance(it.get("sig"), int):
-                            f = lib_file(str(it["sig"]))
-                            if not f:
-                                raise ValueError(f"Semnătura nu mai e în bibliotecă: {it['sig']}")
-                            it["sig"] = lib.index(f)
+                    lib = sig_indexes(items)
                     rot = b.get("rotate")  # {pages, angle}: se aplică după elemente
                     target = stamp(src, items, lib, rotate=rot)
                     _docs.pop(str(target).lower(), None)
@@ -919,6 +956,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                        "page": int(items[0]["page"]) if items else int(rot["pages"][0]) if rot else 1}
                 event("saved", source=str(src), **{k: v for k, v in res.items() if k != "ok"})
                 return self.json(res)
+            if path == "/api/print":
+                return self.json(print_prepare(b["path"], b.get("items") or []))
             if path == "/api/organize":
                 # Ecranul „Organizează paginile”: ordinea nouă, paginile șterse și rotite, scrise o dată.
                 with LOCK:

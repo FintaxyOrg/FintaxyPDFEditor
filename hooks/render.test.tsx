@@ -1,14 +1,15 @@
 import { expect, test } from 'claude-code/testing'
+import type { On } from 'claude-code'
 
 const PDF = String.raw`I:\Shared drives\FINTAXY HQ\01_Management\06_De Semnat\Acord nou.pdf`
 const SIGNED = String.raw`I:\Shared drives\FINTAXY HQ\01_Management\06_De Semnat\Acord nou_semnat.pdf`
 const SIG = String.raw`C:\s\Semnatura Denis Bradu.png`
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>'
 
-type Seen = { runs: (readonly string[])[]; urls: string[]; fills: string[]; submits: string[]; spawned: number }
+type Seen = { runs: (readonly string[])[]; urls: string[]; fills: string[]; submits: string[]; spawned: number; panes: string[]; paneText: string }
 
 // Evenimentele pe care serverul editorului le scrie pe stdout după ce pornește.
-function stubs(on: Parameters<Parameters<typeof test>[1]>[1], seen: Seen, events: object[] = [], panelOk = true, keepAlive = false) {
+function stubs(on: On, seen: Seen, events: object[] = [], panelOk = true, keepAlive = false) {
   on('ui.render', async ($, e) => {
     const { Text } = $.ui.resolve(e)
     return <Text>reply</Text>
@@ -25,7 +26,7 @@ function stubs(on: Parameters<Parameters<typeof test>[1]>[1], seen: Seen, events
           { name: 'Andrei', file: 'C:\\s\\Semnatura Andrei.png', svg: SVG },
         ]
       : { ok: true }
-    return { value: { exitCode: 0, stdout: JSON.stringify(value), stderr: '' } }
+    return { value: { exitCode: 0, stdout: JSON.stringify(value), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('process.spawn', async function* () {
     seen.spawned++
@@ -35,6 +36,10 @@ function stubs(on: Parameters<Parameters<typeof test>[1]>[1], seen: Seen, events
     return { value: { code: 0, signal: null } }
   })
   on('mcp.call', async ($, e) => {
+    if (e.server === 'ccd_view') {
+      seen.panes.push(`${e.tool}:${String(e.args?.pane)}`)
+      return { value: { content: [{ type: 'text', text: seen.paneText }], isError: false } }
+    }
     seen.urls.push(String((e.args as { url?: string })?.url))
     return { value: { content: [{ type: 'text', text: 'ok' }], isError: !panelOk } }
   })
@@ -48,7 +53,7 @@ function stubs(on: Parameters<Parameters<typeof test>[1]>[1], seen: Seen, events
     return { text: e.text }
   })
 }
-const fresh = (): Seen => ({ runs: [], urls: [], fills: [], submits: [], spawned: 0 })
+const fresh = (paneText = 'Showing the Browser pane.'): Seen => ({ runs: [], urls: [], fills: [], submits: [], spawned: 0, panes: [], paneText })
 
 test('desktop: preview doar la cerere, zoom, Deschide, alegerea semnăturii', async ($, on) => {
   const seen = fresh()
@@ -77,6 +82,8 @@ test('desktop: preview doar la cerere, zoom, Deschide, alegerea semnăturii', as
   expect(q.get('path')).toBe(PDF)
   expect(q.get('page')).toBe('2')
   expect(await ui.find({ type: 'Text', text: /panoul din dreapta/ })).toBeDefined()
+  expect(seen.panes).toEqual(['show_pane:preview']) // panoul e adus în față, nu rămâne ascuns
+  expect(seen.runs.some(r => r[2] === 'window')).toBe(false)
 
   // Semnează: lista din card, apoi editorul cu semnătura aleasă.
   await ui.press({ key: 'sign-0' })
@@ -158,6 +165,32 @@ test('fără panou se deschide fereastra de rezervă', async ($, on) => {
   const win = seen.runs.find(r => r[2] === 'window')!
   expect(win[3]).toContain('http://127.0.0.1:47811/?t=tok')
   expect(await ui.find({ type: 'Text', text: /într-o fereastră/ })).toBeDefined()
+})
+
+test('panoul rămas ascuns: editorul se deschide și într-o fereastră', async ($, on) => {
+  const seen = fresh("This session isn't open in any window right now, so its view was left alone.")
+  stubs(on, seen)
+  const ui = await $.ui.mount({
+    plugin: 'pdf-sign', surface: 'desktop', component: 'AssistantMessage',
+    props: { text: `Vezi ${PDF}`, isFirstOfReply: true },
+  })
+  await ui.press({ key: 'panel-0' })
+  expect(seen.panes).toEqual(['show_pane:preview'])
+  expect(seen.runs.find(r => r[2] === 'window')?.[3]).toContain('http://127.0.0.1:47811/?t=tok')
+  expect(await ui.find({ type: 'Text', text: /fereastră separată/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /panoul din dreapta/ })).toBeUndefined()
+})
+
+test('panoul Browser într-o fereastră a lui: cardul spune unde e', async ($, on) => {
+  const seen = fresh('The preview pane is in a window of its own; it was left where it is.')
+  stubs(on, seen)
+  const ui = await $.ui.mount({
+    plugin: 'pdf-sign', surface: 'desktop', component: 'AssistantMessage',
+    props: { text: `Vezi ${PDF}`, isFirstOfReply: true },
+  })
+  await ui.press({ key: 'panel-0' })
+  expect(seen.runs.some(r => r[2] === 'window')).toBe(false)
+  expect(await ui.find({ type: 'Text', text: /fereastra separată a panoului Browser/ })).toBeDefined()
 })
 
 test('fișierele trimise în chat primesc butoanele', async ($, on) => {
