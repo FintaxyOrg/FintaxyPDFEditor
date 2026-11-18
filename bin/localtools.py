@@ -308,25 +308,51 @@ if ('.doc', '.docx', '.rtf', '.odt', '.txt', '.docm', '.dot', '.dotx' -contains 
 """
 
 
+NEED_OFFICE = ("LibreOffice, cel care face conversia, se instalează singur în fundal la prima pornire. "
+               "Încearcă din nou în câteva minute (starea e la Ctrl+K → „Componente”).")
+_MS_OFFICE = {"ok": None}  # None = încă nu știm dacă e instalat Microsoft Office
+
+
 def office_to_pdf(path, f):
-    """Word / Excel / PowerPoint -> PDF cu Microsoft Office (dacă e instalat), altfel cu Stirling + LibreOffice."""
+    """Word / Excel / PowerPoint (și ODT, RTF, TXT, CSV) -> PDF. Cu Microsoft Office dacă e instalat (fidel 100%),
+    altfel cu LibreOffice, pornit fără fereastră (soffice.com --headless): nimic de apăsat nicăieri."""
+    import deps
     files = [p for p in f.get("files") or [] if p]
     if not files:
         raise ValueError("Alege fișierele Word, Excel sau PowerPoint.")
+    if _MS_OFFICE["ok"] is None:
+        _MS_OFFICE["ok"] = deps.ms_office()
+    if not _MS_OFFICE["ok"] and not deps.soffice():
+        raise RuntimeError(NEED_OFFICE)
     outs, errors = [], []
     for p in files:
         src = Path(p)
-        dst = free_name(src.parent, src.stem, ".pdf")
-        r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", OFFICE_PS], capture_output=True,
-                           timeout=300, creationflags=NO_WINDOW, env={**os.environ, "FX_SRC": str(src), "FX_DST": str(dst)})
-        if r.returncode == 0 and dst.exists():
-            outs.append(str(dst))
+        if not src.is_file():
+            errors.append(f"{src.name}: fișierul nu mai există")
             continue
-        err = r.stderr.decode("utf-8", "replace")
-        if "80040154" in err or "Class not registered" in err:
-            raise RuntimeError("Pentru Word/Excel → PDF trebuie Microsoft Office instalat (sau Stirling PDF cu LibreOffice: "
-                               "„Word, Excel, orice fișier → PDF (Stirling)” din Unelte).")
-        errors.append(f"{src.name}: {err.strip().splitlines()[-1] if err.strip() else 'eroare'}")
+        dst = free_name(src.parent, src.stem, ".pdf")
+        err = ""
+        if _MS_OFFICE["ok"]:
+            r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", OFFICE_PS], capture_output=True,
+                               timeout=300, creationflags=NO_WINDOW, stdin=subprocess.DEVNULL,
+                               env={**os.environ, "FX_SRC": str(src), "FX_DST": str(dst)})
+            if r.returncode == 0 and dst.exists():
+                outs.append(str(dst))
+                continue
+            err = r.stderr.decode("utf-8", "replace")
+            if "80040154" in err or "Class not registered" in err:
+                _MS_OFFICE["ok"] = False  # Office e doar pe jumătate instalat: trecem pe LibreOffice
+            err = err.strip().splitlines()[-1] if err.strip() else "eroare"
+        if deps.soffice():
+            try:
+                deps.office_to_pdf(src, dst, fx_sign.STATE)
+                outs.append(str(dst))
+                continue
+            except Exception as e2:
+                err = str(e2)
+        elif not _MS_OFFICE["ok"]:
+            raise RuntimeError(NEED_OFFICE)
+        errors.append(f"{src.name}: {err}")
     if not outs:
         raise RuntimeError("; ".join(errors))
     res = {"kind": "pdf" if len(outs) == 1 else "folder", "out": outs[0] if len(outs) == 1 else str(Path(outs[0]).parent),
@@ -500,12 +526,232 @@ def info(path, f):
     return {"kind": "report", "lines": lines}
 
 
+# ---------- OCR, redactare, înlocuire, pagini web: făcute aici, fără Stirling ----------
+
+def tessdata_dir() -> str:
+    """Folderul cu limbile OCR: cel din aplicație (română + engleză), apoi cel pus de om, apoi Tesseract instalat."""
+    import sys
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent / "app"))
+    for p in (base / "tessdata", fx_sign.STATE / "tools" / "tessdata",
+              Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Tesseract-OCR" / "tessdata"):
+        if (p / "eng.traineddata").is_file() or (p / "ron.traineddata").is_file():
+            return str(p)
+    return ""
+
+
+def ocr(path, f):
+    """Text căutabil peste scanări, cu motorul OCR din PyMuPDF (Tesseract inclus): fără programe instalate.
+    Paginile care au deja text rămân neatinse; cele scanate devin imagine + strat de text invizibil."""
+    src = Path(path)
+    doc = open_pdf(path)
+    warn_signed(doc)
+    td = tessdata_dir()
+    if not td:
+        raise RuntimeError("Lipsesc limbile OCR (tessdata). Reinstalează PDF Sign.")
+    want = [x for x in re.split(r"[+,\s]+", f.get("languages") or "ron+eng") if x]
+    have = [x for x in want if (Path(td) / f"{x}.traineddata").is_file()] or ["eng"]
+    force = (f.get("mode") or "skip") == "force"
+    dpi = int(f.get("dpi") or 300)
+    out = fitz.open()
+    done = 0
+    for i, page in enumerate(doc):
+        if not force and len(page.get_text().strip()) > 20:
+            out.insert_pdf(doc, from_page=i, to_page=i)  # are deja text: rămâne exact cum e
+            continue
+        pix = page.get_pixmap(dpi=dpi, alpha=False)
+        one = fitz.open("pdf", pix.pdfocr_tobytes(language="+".join(have), tessdata=td))
+        new = out.new_page(width=page.rect.width, height=page.rect.height)
+        new.show_pdf_page(new.rect, one, 0)  # pagina rămâne la mărimea ei, nu la cea a imaginii
+        done += 1
+    if not done:
+        raise ValueError("Toate paginile au deja text căutabil. Alege „Refă OCR pe toate paginile” dacă textul e greșit.")
+    target = save(out, next_to(src, "ocr"))
+    return {"kind": "pdf", "out": str(target), "lines": [f"OCR pe {done} din {len(doc)} pagini ({'+'.join(have)})."]}
+
+
+def auto_redact(path, f):
+    """Acoperă definitiv textele date (CNP, IBAN, nume): textul e scos din PDF, nu doar ascuns sub un dreptunghi."""
+    src = Path(path)
+    doc = open_pdf(path)
+    warn_signed(doc)
+    texts = [t.strip() for t in re.split(r"[;\n]+", f.get("texts") or "") if t.strip()]
+    if not texts:
+        raise ValueError("Scrie textele de acoperit, despărțite prin ; (ex. TEST SRL; RO49AAAA1B31007593840000).")
+    hits = {t: 0 for t in texts}
+    for page in doc:
+        found = False
+        for t in texts:
+            for rect in page.search_for(t):
+                page.add_redact_annot(rect, fill=(0, 0, 0))
+                hits[t] += 1
+                found = True
+        if found:
+            page.apply_redactions()
+    total = sum(hits.values())
+    if not total:
+        raise ValueError("Nu am găsit niciunul dintre texte în document (într-un PDF scanat rulează întâi OCR).")
+    target = save(doc, next_to(src, "redactat"), garbage=4)
+    return {"kind": "pdf", "out": str(target), "lines": [f"„{t}”: {n} acoperiri" for t, n in hits.items()]}
+
+
+def replace_text(path, f):
+    """Caută și înlocuiește un text în tot documentul, păstrând fontul și mărimea rândului (ca „Editează text”)."""
+    import editor_server as es
+    find, repl = f.get("find") or "", f.get("replace") or ""
+    if not find.strip():
+        raise ValueError("Scrie textul căutat.")
+    flags = 0 if f.get("matchCase") else re.IGNORECASE
+    pattern = re.compile(re.escape(find), flags)
+    with fitz.open(path) as d:
+        if fx_sign.is_signed(d):
+            raise ValueError("PDF-ul are semnătură digitală; nu-l modific (s-ar invalida semnătura).")
+        n_pages = len(d)
+    items, count = [], 0
+    for n in range(1, n_pages + 1):
+        for line in es.page_runs(path, n):
+            if not pattern.search(line["text"]):
+                continue
+            segs, hit = [], 0
+            for sg in line["segments"]:
+                new, k = pattern.subn(lambda m: repl, sg["text"])
+                hit += k
+                segs.append({**sg, "orig": sg["text"], "text": new})
+            if hit:
+                count += hit
+                items.append({"type": "edit", "page": n, "raw": line["raw"], "segments": segs, "text": "".join(s["text"] for s in segs)})
+    if not items:
+        raise ValueError(f"Nu am găsit „{find}” în document (textul trebuie să fie în același rând, cu același stil).")
+    with es.LOCK:
+        target = fx_sign.stamp(Path(path), items, [])
+        es._docs.pop(str(target).lower(), None)
+    return {"kind": "pdf", "out": str(target), "lines": [f"{count} înlocuiri pe {len({it['page'] for it in items})} pagini."]}
+
+
+def _edge_pdf(source: str, target: Path, timeout: int = 180):
+    """Tipărește o pagină (adresă web sau fișier HTML) în PDF cu Edge, fără fereastră."""
+    work = fx_sign.STATE / "url2pdf"
+    work.mkdir(parents=True, exist_ok=True)
+    out = work / f"page-{os.getpid()}-{len(os.listdir(work))}.pdf"
+    out.unlink(missing_ok=True)
+    subprocess.run([fx_sign.browser(), "--headless=new", "--disable-gpu", f"--user-data-dir={work / 'profile'}",
+                    "--no-pdf-header-footer", "--virtual-time-budget=10000", f"--print-to-pdf={out}", source],
+                   capture_output=True, timeout=timeout, creationflags=NO_WINDOW, stdin=subprocess.DEVNULL)
+    if not out.exists() or out.stat().st_size < 200:
+        raise RuntimeError("Edge nu a putut tipări pagina.")
+    os.replace(out, target)
+
+
+def _md_html(src: str) -> str:
+    """Markdown simplu -> HTML (titluri, liste, îngroșat, cursiv, cod, linkuri, tabele): cât trebuie pentru o notă."""
+    import html
+
+    def inline(t):
+        t = html.escape(t)
+        t = re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
+        t = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", t)
+        t = re.sub(r"(?<![*\w])\*([^*\s][^*]*)\*", r"<i>\1</i>", t)
+        return re.sub(r"\[([^\]]+)\]\((https?://[^\s)]+)\)", r'<a href="\2">\1</a>', t)
+    out, lst, code, table = [], None, None, None
+
+    def flush():
+        nonlocal lst, table
+        if lst:
+            out.append(f"<{lst[0]}>" + "".join(f"<li>{i}</li>" for i in lst[1]) + f"</{lst[0]}>")
+            lst = None
+        if table:
+            rows = [[inline(c.strip()) for c in r.strip().strip("|").split("|")] for r in table if not re.fullmatch(r"[\s:|-]+", r)]
+            out.append("<table>" + "".join("<tr>" + "".join(f"<{'td' if k else 'th'}>{c}</{'td' if k else 'th'}>" for c in r) + "</tr>"
+                                           for k, r in enumerate(rows)) + "</table>")
+            table = None
+    for line in src.splitlines():
+        if line.startswith("```"):
+            if code is None:
+                flush()
+                code = []
+            else:
+                out.append("<pre>" + html.escape("\n".join(code)) + "</pre>")
+                code = None
+            continue
+        if code is not None:
+            code.append(line)
+            continue
+        if re.fullmatch(r"\s*\|.*\|\s*", line):
+            if lst:
+                flush()
+            table = (table or []) + [line]
+            continue
+        m = re.match(r"\s*(?:[-*]|(\d+)[.)])\s+(.*)", line)
+        if m:
+            if table:
+                flush()
+            tag = "ol" if m[1] else "ul"
+            if not lst or lst[0] != tag:
+                flush()
+                lst = (tag, [])
+            lst[1].append(inline(m[2]))
+            continue
+        flush()
+        h = re.match(r"(#{1,6})\s+(.*)", line)
+        if h:
+            out.append(f"<h{len(h[1])}>{inline(h[2])}</h{len(h[1])}>")
+        elif line.strip():
+            out.append(f"<p>{inline(line)}</p>")
+    flush()
+    css = ("body{font:12pt/1.5 'Segoe UI',Arial,sans-serif;margin:18mm;color:#1c2230}table{border-collapse:collapse}"
+           "td,th{border:1px solid #bbb;padding:4px 8px;text-align:left}pre,code{font-family:Consolas,monospace;background:#f3f5f9}"
+           "pre{padding:8px;white-space:pre-wrap}")
+    return f'<!doctype html><html><head><meta charset="utf-8"><style>{css}</style></head><body>' + "\n".join(out) + "</body></html>"
+
+
+def web_to_pdf(path, f):
+    """HTML sau Markdown (fișiere) ori o pagină web (adresă) -> PDF, tipărite cu Edge: fără WeasyPrint, fără Stirling."""
+    outs, errors = [], []
+    url = (f.get("url") or "").strip()
+    if url:
+        if not re.match(r"(?i)^https?://", url):
+            raise ValueError("Scrie adresa completă a paginii (cu https://).")
+        import urllib.parse
+        host = re.sub(r"[^\w.-]+", "_", urllib.parse.urlparse(url).netloc) or "pagina"
+        # lângă PDF-ul deschis; fără document deschis, în Documente
+        folder = Path(f.get("_dir") or (Path(path).parent if path else Path.home() / "Documents"))
+        target = free_name(folder, host, ".pdf")
+        _edge_pdf(url, target)
+        return {"kind": "pdf", "out": str(target)}
+    files = [p for p in f.get("files") or [] if p]
+    if not files:
+        raise ValueError("Alege fișierele (HTML sau Markdown).")
+    for p in files:
+        src = Path(p)
+        try:
+            target = free_name(src.parent, src.stem, ".pdf")
+            if src.suffix.lower() in (".md", ".markdown", ".txt"):
+                tmp = fx_sign.STATE / "url2pdf" / f"{src.stem}-md.html"
+                tmp.parent.mkdir(parents=True, exist_ok=True)
+                tmp.write_text(_md_html(src.read_text(encoding="utf-8", errors="replace")), encoding="utf-8")
+                _edge_pdf(tmp.as_uri(), target)
+                tmp.unlink(missing_ok=True)
+            else:
+                _edge_pdf(src.resolve().as_uri(), target)
+            outs.append(str(target))
+        except Exception as err:
+            errors.append(f"{src.name}: {err}")
+    if not outs:
+        raise RuntimeError("; ".join(errors))
+    res = {"kind": "pdf" if len(outs) == 1 else "folder", "out": outs[0] if len(outs) == 1 else str(Path(outs[0]).parent),
+           "files": [Path(o).name for o in outs]}
+    if errors:
+        res["lines"] = errors
+    return res
+
+
+
 TOOLS = {
     "merge": merge, "split": split, "extract": extract, "removepages": remove_pages, "removeblanks": remove_blanks,
     "rotate": rotate, "compress": compress, "toword": to_word, "toexcel": to_excel, "totext": to_text, "toimg": to_images,
     "fromimg": from_images, "fromoffice": office_to_pdf, "password": protect, "unpassword": unprotect, "watermark": watermark,
     "pagenumbers": page_numbers, "flatten": flatten, "repair": repair, "images": extract_images,
     "validatesign": validate_signatures, "info": info,
+    "ocr": ocr, "autoredact": auto_redact, "replace": replace_text, "fromweb": web_to_pdf,
 }
 
 

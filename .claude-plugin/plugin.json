@@ -1,7 +1,7 @@
 {
   "name": "pdf-sign",
-  "version": "0.14.0",
-  "description": "Preview de PDF în chat și editorul PDF Sign: semnătură olografă și electronică (buletin, token, FintaxySign), semnare în bloc, formulare, PDF-uri ANAF.",
+  "version": "0.15.0",
+  "description": "Preview de PDF în chat și editorul PDF Sign: semnătură olografă și electronică (buletin, token, FintaxySign), semnare în bloc, formulare, PDF-uri ANAF, OCR, chat cu Claude.",
   "author": {
     "name": "Fintaxy"
   },

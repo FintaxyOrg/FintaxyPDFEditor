@@ -4,6 +4,7 @@
 import { FIELD_LABELS, GROUPS, TOOLS } from './tools.js'
 import { lang, setLang, tr } from './i18n.js'
 import { toolIconSvg } from './tool-icons.js'
+import { init as initAssist, openChat, openDeps, openOnboarding } from './assist.js'
 
 const Q = new URLSearchParams(location.search)
 const TOKEN = Q.get('t') || ''
@@ -99,7 +100,7 @@ const S = {
 }
 
 // În panoul lui Claude comentariile ajung la Claude; în aplicația separată, la aplicația AI aleasă.
-const aiName = () => (!S.app.standalone ? 'Claude' : S.app.ai === 'copy' ? 'AI' : S.app.apps.find(a => a.id === S.app.ai)?.name || 'AI')
+const aiName = () => (!S.app.standalone || S.app.ai === 'chat' ? 'Claude' : S.app.ai === 'copy' ? 'AI' : S.app.apps.find(a => a.id === S.app.ai)?.name || 'AI')
 function applyAiName() {
   const n = aiName()
   HINTS.comment = `Click pe pagină unde vrei să-i spui ceva lui ${n}`
@@ -108,19 +109,32 @@ function applyAiName() {
   $('.rail [data-tool=region]').title = tr(`Captură zonă pentru ${n} (R)`)
   if (HINTS[S.tool]) $('#hint').textContent = tr(HINTS[S.tool])
 }
+// Unde pleacă un comentariu: cele două feluri de Claude sunt butoane la vedere (panoul din dreapta, prin ACP, sau
+// aplicația Claude Desktop); restul (Claude Code, ChatGPT, Gemini, clipboard) stau în lista „Altele”.
 function aiPicker(onChange) {
-  const sel = h('select', { class: 'aipick', title: 'Aplicația AI care primește comentariul (rămâne ținută minte)' },
-    ...S.app.apps.map(a => h('option', { value: a.id, title: a.hint, selected: a.id === S.app.ai }, a.name)))
-  sel.addEventListener('change', () => {
-    S.app.ai = sel.value
-    post('settings', { ai: sel.value }).catch(() => {})
+  const main = [['chat', 'Claude · panou'], ['claude', 'Claude Desktop']].filter(([id]) => S.app.apps.some(a => a.id === id))
+  const rest = S.app.apps.filter(a => !main.some(([id]) => id === a.id))
+  const box = h('span', { class: 'aiseg' })
+  const set = id => {
+    S.app.ai = id
+    post('settings', { ai: id }).catch(() => {})
     applyAiName()
+    draw()
     onChange?.()
-  })
-  return sel
+  }
+  const draw = () => {
+    const sel = h('select', { class: 'aipick', title: 'Altă aplicație AI (rămâne ținută minte)' },
+      h('option', { value: '' }, 'Altele'), ...rest.map(a => h('option', { value: a.id, title: a.hint, selected: a.id === S.app.ai }, a.name)))
+    sel.addEventListener('change', () => { if (sel.value) set(sel.value) })
+    box.replaceChildren(...main.map(([id, label]) => h('button', { type: 'button', class: S.app.ai === id ? 'on' : '', title: S.app.apps.find(a => a.id === id)?.hint,
+      onclick: () => set(id) }, label)), sel)
+  }
+  draw()
+  return box
 }
 function sentToast(r, fallback) {
   if (r.sendError) toast(r.sendError, { err: true, ms: 8000 })
+  else if (r.sent?.app === 'chat') openChat() // comentariul a plecat în chatul din editor: îl arătăm
   else toast(r.sent ? r.sent.note : fallback, { ms: r.sent ? 7000 : undefined })
 }
 const main = $('#pages')
@@ -1026,6 +1040,7 @@ addEventListener('afterprint', endPrint)
 function openDrawer(title, ...content) {
   const d = $('#drawer')
   d.hidden = false
+  delete d.dataset.kind
   d.replaceChildren(h('div', { class: 'dh' }, h('h2', {}, title), h('button', { class: 'icon', title: 'Închide', onclick: closeDrawer }, icon('x'))), ...content)
   return d
 }
@@ -1167,10 +1182,14 @@ function openLocalTool(t) {
     go.disabled = true
     result.replaceChildren(h('div', { class: 'result' }, h('span', { class: 'spin' }), 'Lucrez…'))
     try {
-      const r = await post('local', { tool: t.local, path: t.noDoc ? '' : PATH, fields, label: t.label })
+      const r = await post('local', { tool: t.local, path: t.noDoc ? '' : PATH, dir: S.doc?.dir || '', fields, label: t.label })
       result.replaceChildren(showResult(r))
     } catch (err) {
-      result.replaceChildren(h('div', { class: 'result err' }, err.message))
+      const box = h('div', { class: 'result err' }, err.message)
+      if (/LibreOffice/.test(err.message) && /în fundal/.test(err.message)) {
+        box.append(h('div', { class: 'rb' }, h('button', { class: 'secondary', type: 'button', onclick: () => openDeps() }, 'Vezi starea componentelor')))
+      }
+      result.replaceChildren(box)
     } finally {
       go.disabled = false
     }
@@ -1178,19 +1197,21 @@ function openLocalTool(t) {
 }
 // Uneltele care au rămas doar în Stirling: fără el, un mesaj cu ce e de instalat în loc de o eroare.
 const needsStirling = t => !t.local && !t.custom && !t.native && t.endpoint && !S.app.stirling
+const refreshStirling = async () => { if (!S.app.stirling) { try { S.app.stirling = (await api('info')).stirling } catch { /* rămâne cum era */ } } }
 
 async function openToolForm(t) {
   if (t.custom === 'certsign') return openCertSign()
   if (t.custom === 'bulksign') return openBulkSign()
   if (t.custom === 'organize') return openOrganize()
   if (t.local) return openLocalTool(t)
+  await refreshStirling()
   const body = h('div', { class: 'db' })
   const d = openDrawer(t.label, body)
   d.querySelector('.dh').prepend(h('button', { class: 'icon', title: 'Înapoi la unelte', onclick: () => openTools() }, icon('back')))
   if (needsStirling(t)) {
     return body.replaceChildren(h('div', { class: 'form' }, t.desc ? h('p', { class: 'desc' }, t.desc) : null,
-      h('div', { class: 'warn' }, 'Unealta asta vine din Stirling PDF (gratuit), care nu e instalat pe calculatorul ăsta. Instalează-l de pe stirlingpdf.com sau cu comanda de mai jos, apoi redeschide PDF Sign.'),
-      h('pre', {}, 'winget install --id StirlingTools.StirlingPDF -e')))
+      h('div', { class: 'warn' }, 'Unealta asta face parte din pachetul Stirling, care se instalează singur în fundal la prima pornire. Încearcă din nou în câteva minute.'),
+      h('div', { class: 'buttons' }, h('button', { class: 'secondary', type: 'button', onclick: () => openDeps() }, 'Vezi starea componentelor'))))
   }
   body.append(h('div', { class: 'form' }, h('p', { class: 'desc' }, h('span', { class: 'spin' }), 'Încarc unealta din Stirling PDF…')))
   let spec
@@ -1301,34 +1322,109 @@ function fieldControl(f, controls, t) {
 // Semnează prin Windows (bin/certsign.py), fără Stirling: buletinul electronic, un token sau stick-ul din birou
 // prin FintaxySign (cititor de card virtual). Windows cere PIN-ul în fereastra lui; la mai multe PDF-uri, o dată.
 const NO_CERT = 'Buletinul electronic: e în cititor? Stick-ul din birou: pornește FintaxySign și verifică să scrie „connected” și „Driver installed”, apoi apasă Reîncarcă.'
+// Rândul de stare al FintaxySign (stick-ul din birou, folosit de la distanță): pornit?, driver?, stick conectat?
+async function fintaxySignRow(box, reload) {
+  let fs
+  try { fs = (await api('signenv')).fintaxysign } catch { return box.replaceChildren() }
+  const start = h('button', { class: 'linkbtn', type: 'button' }, 'Pornește FintaxySign')
+  start.addEventListener('click', async () => {
+    start.disabled = true
+    try {
+      await post('fintaxysign/start', {})
+      toast('Am pornit FintaxySign. Așteaptă să scrie „connected”, apoi apasă Reîncarcă.')
+      setTimeout(reload, 6000)
+    } catch (err) { toast(err.message, { err: true }) }
+    start.disabled = false
+  })
+  let cls = 'ok', text = 'FintaxySign: pornit, stick conectat'
+  let extra = null
+  if (!fs.running) { cls = 'off'; text = fs.path ? 'FintaxySign: oprit' : 'FintaxySign: neinstalat pe acest calculator'; extra = fs.path ? start : null }
+  else if (!fs.driver) { cls = 'warn'; text = 'FintaxySign: pornit, dar lipsește driverul (apasă „Install driver…” în FintaxySign)' }
+  else if (!fs.stick) { cls = 'warn'; text = 'FintaxySign: pornit, stick-ul nu e conectat încă (verifică să scrie „connected”)' }
+  box.replaceChildren(...[h('span', { class: `dot ${cls}` }), h('span', {}, text), extra].filter(Boolean))
+}
 function certPicker(form) {
   const sel = h('select', {}, h('option', { value: '' }, 'Se încarcă certificatele…'))
   const help = h('small', {})
+  const pin = h('div', { class: 'pinhint', hidden: true })
+  const fsRow = h('div', { class: 'fsrow' })
   const reload = h('button', { class: 'linkbtn', type: 'button' }, '↻ Reîncarcă')
-  form.append(h('label', { class: 'field' }, h('span', {}, 'Certificat *'), sel, help), h('div', {}, reload))
-  const load = async () => {
-    sel.replaceChildren(h('option', { value: '' }, 'Se încarcă certificatele…'))
+  form.append(h('label', { class: 'field' }, h('span', {}, 'Certificat *'), sel, help), pin, h('div', { class: 'certrow' }, reload, fsRow))
+  let list = []
+  let again = 0
+  const showPin = () => {
+    const c = list.find(x => x.thumb === sel.value)
+    pin.hidden = !c?.pinHint
+    pin.textContent = c?.pinHint ? tr(c.pinHint) : ''
+  }
+  const draw = () => {
+    let last = ''
+    try { last = localStorage.getItem('fx-cert') || '' } catch { /* fără memorie, alegem primul */ }
+    const keep = sel.value || last
+    sel.replaceChildren(...list.map(c => h('option', { value: c.thumb, disabled: c.expired }, c.label)))
+    const usable = list.filter(c => !c.expired)
+    sel.value = usable.some(c => c.thumb === keep) ? keep : usable[0]?.thumb || ''
+    showPin()
+  }
+  const load = async fresh => {
+    clearTimeout(again)
+    if (fresh !== 'quiet') sel.replaceChildren(h('option', { value: '' }, 'Se încarcă certificatele…'))
     help.textContent = ''
+    fintaxySignRow(fsRow, () => load(true))
     try {
-      const list = await api('certs')
+      list = await api('certs', fresh === true ? { fresh: 1 } : {})
       if (!list.length) {
         sel.replaceChildren(h('option', { value: '' }, 'Niciun certificat de semnare în Windows'))
         help.textContent = tr(NO_CERT)
+        pin.hidden = true
         return
       }
-      let last = ''
-      try { last = localStorage.getItem('fx-cert') || '' } catch { /* fără memorie, alegem primul */ }
-      sel.replaceChildren(...list.map(c => h('option', { value: c.thumb, disabled: c.expired }, c.label)))
-      const usable = list.filter(c => !c.expired)
-      sel.value = usable.some(c => c.thumb === last) ? last : usable[0]?.thumb || ''
+      draw()
+      // Stick-ul de la distanță răspunde uneori abia după câteva secunde: mai întrebăm o dată, fără să clipească lista.
+      if (list.some(c => c.pending) && sel.isConnected) again = setTimeout(() => load('quiet'), 4000)
     } catch (err) {
       sel.replaceChildren(h('option', { value: '' }, `Eroare: ${err.message}`))
     }
   }
-  reload.addEventListener('click', load)
-  sel.addEventListener('change', () => { try { localStorage.setItem('fx-cert', sel.value) } catch { /* nu e esențial */ } })
+  reload.addEventListener('click', () => load(true))
+  sel.addEventListener('change', () => { showPin(); try { localStorage.setItem('fx-cert', sel.value) } catch { /* nu e esențial */ } })
   load()
   return () => sel.value
+}
+// Trimite semnarea și arată, cât durează, ce se întâmplă (se deschide cheia, Windows cere PIN-ul, se semnează),
+// cu buton de anulare: fereastra de PIN e a Windows-ului și omul trebuie să știe mereu unde să se uite.
+const SIGN_PHASE = {
+  open: 'Deschid cheia certificatului…',
+  wait: 'Aștept fereastra de PIN de la Windows… Cu stick-ul din birou, dacă e la un coleg, aștepți câteva secunde rândul.',
+  pin: 'Scrie PIN-ul în fereastra „Windows Security”, care a apărut peste editor.',
+  hidden: 'Windows a deschis fereastra de PIN, dar o ține ascunsă. Apasă Anulează și încearcă din nou.',
+  sign: 'PIN primit. Se semnează…',
+}
+async function runSign(body, result) {
+  const text = h('span', {}, SIGN_PHASE.open)
+  const stop = h('button', { class: 'linkbtn danger', type: 'button' }, 'Anulează')
+  stop.addEventListener('click', () => { stop.disabled = true; post('certsign/cancel', {}).catch(() => {}) })
+  result.replaceChildren(h('div', { class: 'result signing' }, h('span', { class: 'spin' }), text, stop))
+  let on = true
+  const poll = async () => {
+    while (on) {
+      await new Promise(r => setTimeout(r, 600))
+      if (!on) break
+      try {
+        const st = await api('certsign/status')
+        if (!st.active) continue
+        const key = st.phase === 'pin' && st.dialog === 'hidden' ? 'hidden' : st.phase
+        const many = st.total > 1 ? ` (${Math.min(st.done + 1, st.total)}/${st.total}: ${st.file})` : ''
+        text.textContent = tr(SIGN_PHASE[key] || SIGN_PHASE.open) + many
+      } catch { /* serverul e ocupat cu semnarea: mai întrebăm */ }
+    }
+  }
+  poll()
+  try {
+    return await post('certsign', body)
+  } finally {
+    on = false
+  }
 }
 function textInputs(form, ...names) {
   return names.map(([label, ph]) => {
@@ -1337,10 +1433,9 @@ function textInputs(form, ...names) {
     return inp
   })
 }
-const PIN_WAIT = 'Scrie PIN-ul în fereastra Windows… Cu stick-ul din birou (FintaxySign), dacă e la un coleg, aștepți câteva secunde rândul.'
 
 function openCertSign() {
-  if (!S.doc) return
+  if (!S.doc) return toast('Deschide întâi un PDF.')
   closePop()
   const form = h('div', { class: 'form' })
   const d = openDrawer('Semnătură electronică', h('div', { class: 'db' }, form))
@@ -1387,9 +1482,8 @@ function openCertSign() {
       place = { page: box.p.n, rect: box.rect }
     }
     go.disabled = true
-    result.replaceChildren(h('div', { class: 'result' }, h('span', { class: 'spin' }), PIN_WAIT))
     try {
-      const r = await post('certsign', { thumb: t, items: [{ path: PATH, place }], reason: reason.value, location: location.value })
+      const r = await runSign({ thumb: t, items: [{ path: PATH, place }], reason: reason.value, location: location.value }, result)
       const res = r.results[0]
       if (!res?.ok) throw new Error(res?.error || 'Semnarea nu a reușit.')
       box?.el.remove()
@@ -1440,9 +1534,8 @@ function openBulkSign() {
     const t = thumb()
     if (!t) return result.replaceChildren(h('div', { class: 'result err' }, 'Alege certificatul.'))
     go.disabled = true
-    result.replaceChildren(h('div', { class: 'result' }, h('span', { class: 'spin' }), PIN_WAIT))
     try {
-      const r = await post('certsign', { thumb: t, items: files.map(path => ({ path, place: 'auto' })), reason: reason.value, location: location.value })
+      const r = await runSign({ thumb: t, items: files.map(path => ({ path, place: 'auto' })), reason: reason.value, location: location.value }, result)
       const ok = r.results.filter(x => x.ok).length
       const rows = r.results.map(x => h('div', { class: 'brow' }, h('span', { class: 'bn', title: x.out || x.path }, `${x.ok ? '✓' : '✗'} ${base(x.out || x.path)}`),
         x.ok ? h('button', { class: 'linkbtn', type: 'button', onclick: () => post('open', { path: x.out, how: 'explorer' }) }, 'Explorer') : h('small', {}, x.error)))
@@ -1765,6 +1858,9 @@ function paletteItems() {
     act('Arată în Explorer', () => post('open', { path: PATH, how: 'explorer' }), 'folder', '', 'folder'),
     act('Copiază calea fișierului', () => $('#btnCopyPath').click(), 'copy'),
     act('Toate uneltele PDF', () => openTools(), 'grid'),
+    act('Vorbește cu Claude', () => openChat(), 'comment', 'A', 'chat ai intreaba asistent acp'),
+    act('Componente', () => openDeps(), 'tool', '', 'libreoffice stirling node claude instaleaza dependente programe'),
+    act('Ghid de pornire', () => openOnboarding(), null, '', 'onboarding ajutor help tutorial bun venit'),
   ]
   const groups = Object.fromEntries(GROUPS.map(g => [g.id, g.label]))
   for (const t of toolsCatalog()) {
@@ -1872,6 +1968,7 @@ document.addEventListener('keydown', e => {
   if (typing()) return
   if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel && S.sel.type !== 'edit' && S.sel.type !== 'field') return removeItem(S.sel)
   if (e.key.toLowerCase() === 'p' && !e.ctrlKey && !e.metaKey && !e.altKey) return openOrganize()
+  if (e.key.toLowerCase() === 'a' && !e.ctrlKey && !e.metaKey && !e.altKey) return openChat()
   const keys = { v: 'select', s: 'sig', t: 'text', e: 'edit', c: 'comment', r: 'region' }
   if (keys[e.key.toLowerCase()] && !e.ctrlKey && !e.metaKey && !e.altKey) setTool(keys[e.key.toLowerCase()])
 })
@@ -1976,13 +2073,23 @@ function heartbeat() {
 ;(async () => {
   if (TOKEN) S.app = { ...S.app, ...(await api('info').catch(() => ({}))) }
   applyLang()
+  initAssist({ h, $, api, post, url, toast, icon, tr, openDrawer, closeDrawer, openUpload, state: S, path: () => S.doc?.path || PATH,
+    reload: async msg => { if (!changed().length) { await openDoc(PATH, S.cur); toast(msg) } } })
+  // Ghidul de la prima pornire (se poate sări; se redeschide din Ctrl+K → „Ghid de pornire”).
+  if (TOKEN && !S.app.onboarded && Q.get('onboarding') !== '0') openOnboarding()
   if (S.app.standalone) { heartbeat(); applyAiName() }
   if (!TOKEN) {
     main.append(h('div', { class: 'empty' }, 'Lipsește fișierul. Deschide editorul din cardul PDF-ului din chat.'))
     return
   }
   if (!PATH) {
-    main.append(h('div', { class: 'empty start' }, h('button', { class: 'primary', onclick: () => openOther() }, 'Alege un PDF'), ' sau Ctrl+O'))
+    // Ecranul de start: aplicația rămâne deschisă și când renunți la alegerea fișierului.
+    main.append(h('div', { class: 'empty start' },
+      h('div', { class: 'start-card' }, h('img', { src: '/editor/icon.png', alt: '' }), h('h1', {}, 'PDF Sign'),
+        h('button', { class: 'primary big', onclick: () => openOther() }, 'Alege un PDF'), h('kbd', {}, 'Ctrl+O'),
+        h('button', { class: 'linkbtn', type: 'button', onclick: () => openOnboarding() }, 'Ghid de pornire'))))
+    loadLib().catch(() => {})
+    if (Q.get('pick') && S.app.onboarded) openOther()
     return
   }
   try {

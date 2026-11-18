@@ -1,9 +1,9 @@
 import { expect, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-const PDF = String.raw`I:\Shared drives\FINTAXY HQ\01_Management\06_De Semnat\Acord nou.pdf`
-const SIGNED = String.raw`I:\Shared drives\FINTAXY HQ\01_Management\06_De Semnat\Acord nou_semnat.pdf`
-const SIG = String.raw`C:\s\Semnatura Denis Bradu.png`
+const PDF = String.raw`D:\Documente firma\De semnat\Acord nou.pdf`
+const SIGNED = String.raw`D:\Documente firma\De semnat\Acord nou_semnat.pdf`
+const SIG = String.raw`C:\s\Semnatura Ion Popescu.png`
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>'
 
 type Seen = { runs: (readonly string[])[]; urls: string[]; fills: string[]; submits: string[]; spawned: number; panes: string[]; paneText: string }
@@ -22,8 +22,8 @@ function stubs(on: On, seen: Seen, events: object[] = [], panelOk = true, keepAl
     const value =
       cmd === 'render' ? { pages: 3, page: Number(e.argv[4]), width: 420, height: 594, svg: SVG, signed: false }
       : cmd === 'thumbs' ? [
-          { name: 'Denis Bradu', file: SIG, svg: SVG },
-          { name: 'Andrei', file: 'C:\\s\\Semnatura Andrei.png', svg: SVG },
+          { name: 'Ion Popescu', file: SIG, svg: SVG },
+          { name: 'Maria', file: 'C:\\s\\Semnatura Maria.png', svg: SVG },
         ]
       : { ok: true }
     return { value: { exitCode: 0, stdout: JSON.stringify(value), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
@@ -109,9 +109,9 @@ test('căutarea în semnături și semnătura nouă', async ($, on) => {
   })
   await ui.press({ key: 'sign-0' })
   expect(await ui.find({ key: 'use-0-1' })).toBeDefined()
-  await ui.input({ key: 'pick-search-0', text: 'andrei', kind: 'change' })
-  expect(await ui.find({ type: 'Button', text: '✍ Andrei' })).toBeDefined()
-  expect(await ui.find({ type: 'Button', text: '✍ Denis Bradu' })).toBeUndefined()
+  await ui.input({ key: 'pick-search-0', text: 'maria', kind: 'change' })
+  expect(await ui.find({ type: 'Button', text: '✍ Maria' })).toBeDefined()
+  expect(await ui.find({ type: 'Button', text: '✍ Ion Popescu' })).toBeUndefined()
   await ui.input({ key: 'pick-search-0', text: 'zzz', kind: 'change' })
   expect(await ui.find({ type: 'Text', text: /Nicio semnătură/ })).toBeDefined()
   const before = seen.runs.filter(r => r[2] === 'thumbs').length
@@ -124,7 +124,7 @@ test('căutarea în semnături și semnătura nouă', async ($, on) => {
 
 test('salvarea din editor schimbă cardul pe fișierul semnat', async ($, on) => {
   const seen = fresh()
-  stubs(on, seen, [{ event: 'saved', source: PDF, out: SIGNED, sigs: ['Denis Bradu'], texts: 1, edits: 0, page: 3 }])
+  stubs(on, seen, [{ event: 'saved', source: PDF, out: SIGNED, sigs: ['Ion Popescu'], texts: 1, edits: 0, page: 3 }])
   const ui = await $.ui.mount({
     plugin: 'pdf-sign', surface: 'desktop', component: 'AssistantMessage',
     props: { text: `Vezi ${PDF}`, isFirstOfReply: true },

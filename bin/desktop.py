@@ -78,6 +78,8 @@ PICK_KINDS = {  # ce se poate alege la „Adaugă fișiere”: semnarea în bloc
     "pdf": (("Documente PDF", "PDF documents"), "*.pdf"),
     "image": (("Imagini", "Images"), "*.jpg *.jpeg *.png *.bmp *.gif *.tif *.tiff *.webp"),
     "office": (("Word, Excel, PowerPoint", "Word, Excel, PowerPoint"), "*.doc *.docx *.rtf *.odt *.txt *.xls *.xlsx *.csv *.ods *.ppt *.pptx *.odp"),
+    "any": (("Documente", "Documents"), "*.doc *.docx *.rtf *.odt *.txt *.xls *.xlsx *.csv *.ods *.ppt *.pptx *.odp *.odg *.vsd *.vsdx *.pub *.wpd *.html *.htm *.xml *.svg *.png *.jpg *.jpeg *.bmp *.tif *.tiff"),
+    "web": (("HTML, Markdown", "HTML, Markdown"), "*.html *.htm *.md *.markdown *.txt"),
 }
 
 
@@ -106,6 +108,7 @@ def pick_pdfs(initial: str = "", kind: str = "pdf") -> list:
 # ---------- aplicațiile AI ----------
 
 APPS = [
+    {"id": "chat", "name": "Claude, aici în PDF Sign", "hint": "chatul din dreapta; Claude vede PDF-ul și captura"},
     {"id": "claude", "name": "Claude Desktop", "hint": "aplicația Claude; captura e în clipboard (Ctrl+V)"},
     {"id": "claude-code", "name": "Claude Code", "hint": "terminal în folderul PDF-ului; vede PDF-ul și captura"},
     {"id": "chatgpt", "name": "ChatGPT", "hint": "chatgpt.com; captura e în clipboard (Ctrl+V)"},
@@ -117,7 +120,24 @@ APP_BY_ID = {a["id"]: a for a in APPS}
 
 def current_ai() -> str:
     ai = settings().get("ai", "")
-    return ai if ai in APP_BY_ID else "claude"
+    if ai in APP_BY_ID:
+        return ai
+    try:  # nimic ales încă: chatul din editor dacă e gata de folosit, altfel aplicația Claude
+        import acp_chat
+        return "chat" if acp_chat.status()["available"] else "claude"
+    except Exception:
+        return "claude"
+
+
+def app_version() -> str:
+    """Versiunea aplicației: version.txt lângă PDF Sign.exe (portabil) sau plugin.json (din cod)."""
+    here = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
+    try:
+        if getattr(sys, "frozen", False):
+            return (here / "version.txt").read_text(encoding="ascii").strip()
+        return json.loads((here / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
+    except (OSError, ValueError, KeyError):
+        return ""
 
 
 def english() -> bool:
@@ -228,7 +248,10 @@ def running():
 
 
 def editor_url(port: int, token: str, path: str) -> str:
-    return f"http://127.0.0.1:{port}/?" + urllib.parse.urlencode({"t": token, "path": path})
+    q = {"t": token, "path": path}
+    if not path:
+        q["pick"] = "1"  # ecranul de start deschide singur alegerea fișierului (după ce ghidul a fost parcurs)
+    return f"http://127.0.0.1:{port}/?" + urllib.parse.urlencode(q)
 
 
 def main(argv: list):
@@ -240,10 +263,9 @@ def main(argv: list):
 
     files = [str(Path(a).resolve()) for a in argv if a.strip() and Path(a).is_file()]
     if not files:
-        f = pick_pdf()
-        if not f:
-            return
-        files = [f]
+        # Fără PDF: ecranul de start. Fereastra de ales fișierul se deschide din el (singură, după prima pornire),
+        # iar dacă omul renunță, aplicația rămâne deschisă.
+        files = [""]
     else:
         save_settings(lastDir=str(Path(files[-1]).parent))
 

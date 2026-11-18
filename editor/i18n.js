@@ -9,6 +9,77 @@ export function setLang(l) {
 }
 
 const EN = {
+  'Claude · panou': 'Claude · sidebar', 'Altele': 'Others', 'Altă aplicație AI (rămâne ținută minte)': 'Another AI app (remembered)',
+  'Componente': 'Components', 'Vezi starea componentelor': 'See component status',
+  'Unealta asta face parte din pachetul Stirling, care se instalează singur în fundal la prima pornire. Încearcă din nou în câteva minute.':
+    'This tool is part of the Stirling pack, which installs by itself in the background on first start. Try again in a few minutes.',
+  'LibreOffice, cel care face conversia, se instalează singur în fundal la prima pornire. Încearcă din nou în câteva minute (starea e la Ctrl+K → „Componente”).':
+    'LibreOffice, which does the conversion, installs by itself in the background on first start. Try again in a few minutes (status: Ctrl+K → “Components”).',
+  'Uneltele Stirling se instalează singure în fundal: încearcă din nou în câteva minute.': 'The Stirling tools install by themselves in the background: try again in a few minutes.',
+  'Deschide întâi un PDF.': 'Open a PDF first.',
+  'Alege un PDF': 'Choose a PDF',
+  'Unealta asta vine din Stirling PDF (gratuit), care nu e instalat pe calculatorul ăsta.': 'This tool comes from Stirling PDF (free), which is not installed on this computer.',
+  'Instalează Stirling PDF': 'Install Stirling PDF',
+  'Limba': 'Language', 'Română + engleză': 'Romanian + English', 'Română': 'Romanian', 'Engleză': 'English',
+  'Doar cele fără text (scanate)': 'Only those without text (scanned)', 'Refă OCR pe toate paginile': 'Redo OCR on all pages',
+  'Acoperă definitiv textele date (ex. CNP, IBAN): sunt scoase din PDF.': 'Permanently covers the given texts (e.g. personal ID, IBAN): they are removed from the PDF.',
+  'Textele de acoperit (despărțite prin ;)': 'Texts to cover (separated by ;)', 'ex. TEST SRL; RO49AAAA1B31007593840000': 'e.g. TEST SRL; RO49AAAA1B31007593840000',
+  'Înlocuiește un text peste tot în document, cu același font.': 'Replaces a text everywhere in the document, with the same font.',
+  'Ține cont de litere mari / mici': 'Match case',
+  'Orice document pe care îl deschide LibreOffice.': 'Any document LibreOffice can open.',
+  'Fișierele HTML': 'HTML files', 'Fișierele Markdown': 'Markdown files', 'Adresa paginii': 'Page address',
+  'Pagina e tipărită în PDF, lângă documentul deschis.': 'The page is printed to PDF, next to the open document.',
+  'Scrie textul căutat.': 'Type the text to search for.',
+  'Scrie adresa completă a paginii (cu https://).': 'Type the full page address (with https://).',
+  'Toate paginile au deja text căutabil. Alege „Refă OCR pe toate paginile” dacă textul e greșit.': 'All pages already have searchable text. Choose “Redo OCR on all pages” if the text is wrong.',
+  'Nu am găsit niciunul dintre texte în document (într-un PDF scanat rulează întâi OCR).': 'None of the texts were found in the document (on a scanned PDF run OCR first).',
+  // semnătura electronică: surse, PIN, starea FintaxySign, fazele semnării (v0.15)
+  'FintaxySign: pornit, stick conectat': 'FintaxySign: running, stick connected',
+  'FintaxySign: oprit': 'FintaxySign: not running',
+  'FintaxySign: neinstalat pe acest calculator': 'FintaxySign: not installed on this computer',
+  'FintaxySign: pornit, dar lipsește driverul (apasă „Install driver…” în FintaxySign)': 'FintaxySign: running, but the driver is missing (press “Install driver…” in FintaxySign)',
+  'FintaxySign: pornit, stick-ul nu e conectat încă (verifică să scrie „connected”)': 'FintaxySign: running, the stick is not connected yet (check that it says “connected”)',
+  'Pornește FintaxySign': 'Start FintaxySign',
+  'Am pornit FintaxySign. Așteaptă să scrie „connected”, apoi apasă Reîncarcă.': 'Started FintaxySign. Wait until it says “connected”, then press Reload.',
+  'Deschid cheia certificatului…': 'Opening the certificate key…',
+  'Aștept fereastra de PIN de la Windows… Cu stick-ul din birou, dacă e la un coleg, aștepți câteva secunde rândul.':
+    'Waiting for the Windows PIN window… With the office stick, if a colleague has it, you wait a few seconds for your turn.',
+  'Scrie PIN-ul în fereastra „Windows Security”, care a apărut peste editor.': 'Type the PIN in the “Windows Security” window that appeared over the editor.',
+  'Windows a deschis fereastra de PIN, dar o ține ascunsă. Apasă Anulează și încearcă din nou.': 'Windows opened the PIN window but keeps it hidden. Press Cancel and try again.',
+  'PIN primit. Se semnează…': 'PIN received. Signing…',
+  'Anulează': 'Cancel',
+  'Windows cere PIN-ul de SEMNARE al buletinului (6 cifre), nu pe cel de 4 cifre. După 3 PIN-uri greșite buletinul se blochează.':
+    'Windows asks for the eID card SIGNING PIN (6 digits), not the 4-digit one. After 3 wrong PINs the card is blocked.',
+  'Windows cere PIN-ul stick-ului din birou. Dacă stick-ul e la un coleg, aștepți câteva secunde rândul.':
+    'Windows asks for the office stick PIN. If a colleague has the stick, you wait a few seconds for your turn.',
+  'Windows cere PIN-ul tokenului.': 'Windows asks for the token PIN.',
+  'PIN greșit. Nu mai încerca dacă nu ești sigur de el: după 3 PIN-uri greșite la rând cardul se blochează.':
+    'Wrong PIN. Do not try again unless you are sure of it: after 3 wrong PINs in a row the card is blocked.',
+  'Cardul e blocat: s-au introdus prea multe PIN-uri greșite. Se deblochează cu codul PUK.': 'The card is blocked: too many wrong PINs were entered. It is unblocked with the PUK code.',
+  'Semnarea a fost anulată (fereastra de PIN închisă).': 'Signing was cancelled (the PIN window was closed).',
+  'Semnarea a fost anulată.': 'Signing was cancelled.',
+  'Cardul nu e în cititor (sau stick-ul nu e conectat în FintaxySign).': 'The card is not in the reader (or the stick is not connected in FintaxySign).',
+  'Cardul a fost scos din cititor în timpul semnării.': 'The card was removed from the reader while signing.',
+  'Cardul nu răspunde. Scoate-l și pune-l la loc (sau repornește FintaxySign), apoi încearcă din nou.': 'The card does not respond. Take it out and put it back (or restart FintaxySign), then try again.',
+  'Serviciul Windows pentru carduri nu e pornit. Repornește calculatorul.': 'The Windows smart card service is not running. Restart the computer.',
+  'Cheia certificatului nu e pe cardul din cititor. Verifică să fie cardul / stick-ul potrivit.': 'The certificate key is not on the card in the reader. Check that it is the right card / stick.',
+  'Cheia certificatului nu e disponibilă. Verifică să fie cardul / stick-ul conectat.': 'The certificate key is not available. Check that the card / stick is connected.',
+  'O semnare e deja în curs. Scrie PIN-ul în fereastra Windows sau apasă Anulează, apoi încearcă din nou.': 'A signing is already in progress. Type the PIN in the Windows window or press Cancel, then try again.',
+  'Windows nu a putut deschide cheia certificatului în 60 de secunde. Verifică să fie cardul în cititor (sau stick-ul conectat în FintaxySign) și încearcă din nou.':
+    'Windows could not open the certificate key in 60 seconds. Check that the card is in the reader (or the stick is connected in FintaxySign) and try again.',
+  'Nu a venit niciun răspuns în 5 minute. Dacă fereastra de PIN nu a apărut, repornește PDF Sign și încearcă din nou.':
+    'No answer came in 5 minutes. If the PIN window did not appear, restart PDF Sign and try again.',
+  'Fișierul nu mai există.': 'The file no longer exists.',
+  'Nu găsesc FintaxySign.exe pe calculator. Cere folderul FintaxySign de la administratorul firmei.': 'FintaxySign.exe was not found on this computer. Ask your company administrator for the FintaxySign folder.',
+  'Instalează LibreOffice': 'Install LibreOffice',
+  'Pentru Word / Excel → PDF trebuie LibreOffice (gratuit) sau Microsoft Office. Apasă „Instalează LibreOffice” mai jos: se instalează singur, fără alte întrebări.':
+    'Word / Excel → PDF needs LibreOffice (free) or Microsoft Office. Press “Install LibreOffice” below: it installs by itself, no further questions.',
+  'Cu Microsoft Office sau LibreOffice (se instalează din aplicație).': 'With Microsoft Office or LibreOffice (installs from the app).',
+  'Vorbește cu Claude': 'Talk to Claude', 'Programe în plus': 'Extra programs', 'Ghid de pornire': 'Getting started',
+  'Claude, aici în PDF Sign': 'Claude, here in PDF Sign', 'chatul din dreapta; Claude vede PDF-ul și captura': 'the chat on the right; Claude sees the PDF and the capture',
+  'Am trimis comentariul în chatul cu Claude.': 'Sent the comment to the Claude chat.',
+  'Claude încă răspunde la mesajul dinainte. Așteaptă sau apasă Oprește.': 'Claude is still answering the previous message. Wait or press Stop.',
+  'Legătura cu Claude nu e instalată încă.': 'The Claude link is not installed yet.',
   // bara de sus și uneltele din stânga (index.html)
   'Arată în Explorer': 'Show in Explorer', 'Copiază calea fișierului': 'Copy file path', 'Deschide alt PDF (Ctrl+O)': 'Open another PDF (Ctrl+O)',
   'Pagina anterioară': 'Previous page', 'Pagina următoare': 'Next page', 'Micșorează': 'Zoom out', 'Potrivește lățimea': 'Fit width',
@@ -235,6 +306,17 @@ const EN = {
 
 // Texte cu valori în ele: [tipar, înlocuire]. Tiparele sunt cât mai precise, ca să nu prindă textul scris de om.
 const PATTERNS = [
+  [/^OCR pe (\d+) din (\d+) pagini \((.+)\)\.$/, 'OCR on $1 of $2 pages ($3).'],
+  [/^„(.+)”: (\d+) acoperiri$/, '“$1”: $2 redactions'],
+  [/^(\d+) înlocuiri pe (\d+) pagini\.$/, '$1 replacements on $2 pages.'],
+  [/^Nu am găsit „(.+)” în document .*$/, 'Did not find “$1” in the document (the text must be on one line, in one style).'],
+  [/^Stick birou \(FintaxySign\) · (.+) · până la (\S+)( · EXPIRAT)?( · NECONECTAT)?$/, (m, n, d, e, a) => `Office stick (FintaxySign) · ${n} · until ${d}${e ? ' · EXPIRED' : ''}${a ? ' · NOT CONNECTED' : ''}`],
+  [/^Buletin electronic · (.+) · până la (\S+)( · EXPIRAT)?( · NECONECTAT)?$/, (m, n, d, e, a) => `eID card · ${n} · until ${d}${e ? ' · EXPIRED' : ''}${a ? ' · NOT CONNECTED' : ''}`],
+  [/^Token \/ card · (.+) · până la (\S+)( · EXPIRAT)?( · NECONECTAT)?$/, (m, n, d, e, a) => `Token / card · ${n} · until ${d}${e ? ' · EXPIRED' : ''}${a ? ' · NOT CONNECTED' : ''}`],
+  [/^Pe calculator · (.+) · până la (\S+)( · EXPIRAT)?$/, (m, n, d, e) => `On this computer · ${n} · until ${d}${e ? ' · EXPIRED' : ''}`],
+  [/^Claude nu e conectat pe acest calculator .*$/, 'Claude is not connected on this computer (or the sign-in expired). Press “Connect Claude”, type /login in the window that opens, then send the message again.'],
+  [/^Claude Code nu a pornit: /, 'Claude Code did not start: '],
+  [/^Claude Code s-a oprit\./, 'Claude Code stopped.'],
   [/^Click pe pagină unde vrei să-i spui ceva lui (.+)$/, 'Click the page where you want to tell $1 something'],
   [/^Trage un dreptunghi peste zona pe care vrei s-o trimiți lui (.+)$/, 'Drag a rectangle over the area you want to send to $1'],
   [/^Comentariu pentru (.+) \(C\)$/, 'Comment for $1 (C)'],

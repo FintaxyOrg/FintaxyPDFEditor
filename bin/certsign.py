@@ -27,6 +27,7 @@ from pyhanko.stamp import TextStampStyle
 from pyhanko_certvalidator.registry import SimpleCertificateStore
 
 import fx_sign
+import winenv
 
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -54,18 +55,87 @@ $now = Get-Date
 """
 
 
-def list_certs() -> list:
-    """Certificatele cu cheie privată din Windows, cele bune de semnat primele (non-repudiere, în termen)."""
-    r = subprocess.run(["powershell", "-NoProfile", "-Command", LIST_PS], capture_output=True, timeout=60,
-                       creationflags=NO_WINDOW)
-    data = json.loads(r.stdout.decode("utf-8", "replace").strip() or "[]")
-    certs = data if isinstance(data, list) else [data]
+SOURCES = {
+    "fintaxysign": "Stick birou (FintaxySign)",
+    "cei": "Buletin electronic",
+    "token": "Token / card",
+    "pc": "Pe calculator",
+}
+PIN_HINTS = {
+    "cei": "Windows cere PIN-ul de SEMNARE al buletinului (6 cifre), nu pe cel de 4 cifre. După 3 PIN-uri greșite buletinul se blochează.",
+    "fintaxysign": "Windows cere PIN-ul stick-ului din birou. Dacă stick-ul e la un coleg, aștepți câteva secunde rândul.",
+    "token": "Windows cere PIN-ul tokenului.",
+    "pc": "",
+}
+def source_of(issuer: str, key: dict, guess_stick: bool = False) -> str:
+    if winenv.is_virtual_reader(key.get("reader", "")):
+        return "fintaxysign"
+    if "RO CEI" in (issuer or "").upper():
+        return "cei"
+    if key.get("smartcard") and not key.get("reader") and guess_stick:
+        return "fintaxysign"  # stick-ul încă n-a răspuns, dar e singurul card care poate ține cheia asta
+    return "token" if key.get("smartcard") else "pc"
+
+
+def _native_certs() -> list:
+    """Certificatele citite direct din Windows (instant), în aceeași formă ca lista din PowerShell."""
+    import datetime
+    certs = []
+    raw = winenv.store_certs()
+    for r in raw:
+        c = x509.Certificate.load(r["der"])
+        usages = c.key_usage_value.native if c.key_usage_value else set()
+        ekus = set(c.extended_key_usage_value.native) if c.extended_key_usage_value else set()
+        after = c["tbs_certificate"]["validity"]["not_after"].native
+        certs.append({
+            "thumb": r["thumb"], "name": c.subject.native.get("common_name") or c.subject.human_friendly,
+            "issuer": c.issuer.native.get("common_name") or c.issuer.human_friendly, "friendly": r["friendly"],
+            "notAfter": after.astimezone().strftime("%Y-%m-%d"), "expired": after < datetime.datetime.now(datetime.timezone.utc),
+            "nonRepudiation": "non_repudiation" in usages, "digitalSignature": "digital_signature" in usages,
+            # doar pentru autentificare (fără semnarea documentelor / emailului)
+            "clientAuthOnly": bool(ekus) and not (ekus & {"email_protection", "microsoft_document_signing", "1.3.6.1.4.1.311.10.3.12",
+                                                           "1.2.840.113583.1.1.5", "adobe_authentic_documents_trust"}),
+        })
+    return certs, raw
+
+
+def list_certs(fresh: bool = False) -> list:
+    """Certificatele cu cheie privată din Windows, cele bune de semnat primele (non-repudiere, în termen, conectate).
+    Fiecare spune de unde vine (buletin, stick prin FintaxySign, token) și ce PIN cere."""
+    src = {}
+    try:
+        certs, raw = _native_certs()
+        src = winenv.key_sources(raw, wait=6.0 if fresh else 2.5, fresh=fresh)
+    except Exception:
+        # Varianta veche, prin PowerShell (~3 s), dacă citirea directă nu merge pe calculatorul ăsta.
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", LIST_PS], capture_output=True, timeout=60,
+                           creationflags=NO_WINDOW)
+        data = json.loads(r.stdout.decode("utf-8", "replace").strip() or "[]")
+        certs = data if isinstance(data, list) else [data]
+    # Până răspunde stick-ul de la distanță: dacă FintaxySign are stick-ul conectat și singurul alt card din
+    # cititoare e buletinul, certificatele de pe card care nu sunt ale buletinului nu pot fi decât pe stick.
+    guess = False
+    try:
+        rd = winenv.readers()
+        physical = sum(1 for r in rd if r["card"] and not winenv.is_virtual_reader(r["name"]))
+        has_cei = any("RO CEI" in (c.get("issuer") or "").upper() for c in certs)
+        guess = any(r["card"] for r in rd if winenv.is_virtual_reader(r["name"])) and physical <= (1 if has_cei else 0)
+    except Exception:
+        pass
     for c in certs:
         # Buletinul electronic are două certificate: „(Semnare)” și „(Autentificare)”; doar primul e pentru semnat.
         label = c.get("friendly") or c["name"]
+        key = src.get(c["thumb"].upper(), {})
         c["signing"] = bool(c.get("nonRepudiation")) or "semnare" in label.lower()
-        c["label"] = f"{label} · {c.get('issuer', '')} · până la {c['notAfter']}" + (" · EXPIRAT" if c.get("expired") else "")
-    certs.sort(key=lambda c: (bool(c.get("expired")), not c["signing"], bool(c.get("clientAuthOnly")), c["label"].lower()))
+        c["source"] = source_of(c.get("issuer", ""), key, guess)
+        c["sourceName"] = SOURCES[c["source"]]
+        c["reader"] = key.get("reader", "")
+        c["pending"] = bool(key.get("pending"))  # stick-ul de la distanță încă n-a răspuns: editorul mai întreabă o dată
+        c["absent"] = bool(key) and not c["pending"] and not key.get("present", True)
+        c["pinHint"] = PIN_HINTS[c["source"]]
+        c["label"] = (f"{c['sourceName']} · {label} · până la {c['notAfter']}" + (" · EXPIRAT" if c.get("expired") else "")
+                      + (" · NECONECTAT" if c["absent"] and not c.get("expired") else ""))
+    certs.sort(key=lambda c: (bool(c.get("expired")), c["absent"], not c["signing"], bool(c.get("clientAuthOnly")), c["label"].lower()))
     return certs
 
 
@@ -75,7 +145,6 @@ SIGN_PS = r"""
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Security
-Add-Type -Namespace Fx -Name Win -MemberDefinition '[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();'
 try {
   if ($env:FX_PFX) {
     # doar pentru teste: un certificat dintr-un fișier .pfx în loc de cel din Windows
@@ -97,13 +166,15 @@ try {
   if (-not $rsa) { $ec = [Security.Cryptography.X509Certificates.ECDsaCertificateExtensions]::GetECDsaPrivateKey($c) }
   if (-not $rsa -and -not $ec) { throw 'Certificatul nu are o cheie privată pe care Windows s-o poată folosi.' }
   $key = if ($rsa) { $rsa } else { $ec }
-  # Fereastra de PIN apare deasupra editorului (fereastra din față când s-a apăsat Semnează), nu în spatele lui.
-  if ($key -is [Security.Cryptography.RSACng] -or $key -is [Security.Cryptography.ECDsaCng]) {
-    try { $key.Key.ParentWindowHandle = [Fx.Win]::GetForegroundWindow() } catch {}
+  # Fereastra de PIN apare deasupra editorului: părintele e fereastra editorului, aleasă și verificată de aplicație
+  # (FX_HWND). Fără părinte bun nu punem niciunul: legată de o fereastră invizibilă, fereastra de PIN rămâne ascunsă.
+  if ($env:FX_HWND -and $env:FX_HWND -ne '0' -and ($key -is [Security.Cryptography.RSACng] -or $key -is [Security.Cryptography.ECDsaCng])) {
+    try { $key.Key.ParentWindowHandle = [IntPtr][int64]$env:FX_HWND } catch {}
   }
   "READY " + $(if ($rsa) { 'rsa' } else { 'ecdsa' })
 } catch {
-  "ERR " + $_.Exception.GetBaseException().Message
+  $b = $_.Exception.GetBaseException()
+  "ERR " + ('{0:X8}' -f $b.HResult) + " " + ($b.Message -replace '\s+', ' ')
   exit 1
 }
 while ($null -ne ($line = [Console]::In.ReadLine())) {
@@ -118,29 +189,92 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
     }
     "OK " + [Convert]::ToBase64String($sig)
   } catch {
-    "ERR " + $_.Exception.GetBaseException().Message
+    $b = $_.Exception.GetBaseException()
+    "ERR " + ('{0:X8}' -f $b.HResult) + " " + ($b.Message -replace '\s+', ' ')
   }
 }
 """
 
 
+class SignStop(RuntimeError):
+    """Semnarea trebuie oprită cu totul (PIN greșit, card blocat, anulare): nu se mai încearcă pe fișierul următor."""
+
+
+# Codurile Windows care contează la semnare, pe înțelesul omului.
+ERRORS = {
+    "8010006B": "PIN greșit. Nu mai încerca dacă nu ești sigur de el: după 3 PIN-uri greșite la rând cardul se blochează.",
+    "8010006C": "Cardul e blocat: s-au introdus prea multe PIN-uri greșite. Se deblochează cu codul PUK.",
+    "8010006E": "Semnarea a fost anulată (fereastra de PIN închisă).",
+    "80100002": "Semnarea a fost anulată.",
+    "800704C7": "Semnarea a fost anulată (fereastra de PIN închisă).",
+    "8010000C": "Cardul nu e în cititor (sau stick-ul nu e conectat în FintaxySign).",
+    "80100069": "Cardul a fost scos din cititor în timpul semnării.",
+    "80100010": "Cardul nu răspunde. Scoate-l și pune-l la loc (sau repornește FintaxySign), apoi încearcă din nou.",
+    "8010001D": "Serviciul Windows pentru carduri nu e pornit. Repornește calculatorul.",
+    "80090016": "Cheia certificatului nu e pe cardul din cititor. Verifică să fie cardul / stick-ul potrivit.",
+    "8009000D": "Cheia certificatului nu e disponibilă. Verifică să fie cardul / stick-ul conectat.",
+}
+
+
+def explain(line: str):
+    """„ERR <cod> <mesaj>” -> (mesaj pe românește, oprește tot?)."""
+    body = line[4:].strip()
+    code, _, msg = body.partition(" ")
+    is_code = len(code) == 8 and all(ch in "0123456789abcdefABCDEF" for ch in code)
+    if is_code and code.upper() in ERRORS:
+        return ERRORS[code.upper()], True
+    if not is_code:
+        msg = body
+    low = msg.lower()
+    if "cancel" in low or "anulat" in low:
+        return "Semnarea a fost anulată (fereastra de PIN închisă).", True
+    return (f"{msg} (cod {code.upper()})" if is_code else msg), False
+
+
+# O singură semnare o dată: două ferestre de PIN deschise pe același card se blochează una pe alta.
+ACTIVE = {"key": None, "phase": "", "since": 0.0, "dialog": "", "file": "", "done": 0, "total": 0}
+BUSY = threading.Lock()
+
+
+def status() -> dict:
+    """Ce se întâmplă acum cu semnarea, pentru editor: se deschide cheia / se așteaptă PIN-ul / se semnează."""
+    on = ACTIVE["key"] is not None
+    return {"active": on, "phase": ACTIVE["phase"], "seconds": round(time.time() - ACTIVE["since"], 1) if on else 0,
+            "dialog": ACTIVE["dialog"], "file": ACTIVE["file"], "done": ACTIVE["done"], "total": ACTIVE["total"]}
+
+
+def cancel() -> bool:
+    """Oprește semnarea în curs (închide și fereastra de PIN)."""
+    k = ACTIVE["key"]
+    if not isinstance(k, WinKey):
+        return False
+    k.cancelled = True
+    k.kill()
+    return True
+
+
 class WinKey:
     """Cheia unui certificat din Windows, ținută deschisă într-un proces PowerShell cât durează semnarea."""
 
-    def __init__(self, thumb: str, pfx: str = "", pfx_pass: str = ""):
+    def __init__(self, thumb: str, pfx: str = "", pfx_pass: str = "", hwnd: int = 0):
         # Testele aplicației împachetate dau un .pfx prin mediu (FX_TEST_PFX), fără certificat în Windows.
         pfx = pfx or os.environ.get("FX_TEST_PFX", "")
         pfx_pass = pfx_pass or os.environ.get("FX_TEST_PFX_PASS", "")
-        env = {**os.environ, "FX_THUMB": "".join(ch for ch in thumb if ch.isalnum()), "FX_PFX": pfx, "FX_PFX_PASS": pfx_pass}
-        self.proc = subprocess.Popen(["powershell", "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-Command", SIGN_PS],
-                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
-                                     creationflags=NO_WINDOW, text=True, encoding="utf-8", errors="replace")
+        env = {**os.environ, "FX_THUMB": "".join(ch for ch in thumb if ch.isalnum()), "FX_PFX": pfx, "FX_PFX_PASS": pfx_pass,
+               "FX_HWND": str(int(hwnd or 0))}
+        self.cancelled = False
+        self.hwnd = int(hwnd or 0)
         self.lock = threading.Lock()
         self.cert = None
         self.chain = []
         self.kind = ""
+        self.proc = subprocess.Popen(["powershell", "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-Command", SIGN_PS],
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+                                     creationflags=NO_WINDOW, text=True, encoding="utf-8", errors="replace")
+        ACTIVE.update(key=self, phase="open", since=time.time(), dialog="")
         while True:
-            line = self._read(90)
+            line = self._read(60, "Windows nu a putut deschide cheia certificatului în 60 de secunde. Verifică să fie cardul în "
+                                  "cititor (sau stick-ul conectat în FintaxySign) și încearcă din nou.")
             if line.startswith("CERT "):
                 self.cert = x509.Certificate.load(base64.b64decode(line[5:]))
             elif line.startswith("CHAIN "):
@@ -150,43 +284,80 @@ class WinKey:
                 return
             elif line.startswith("ERR "):
                 self.close()
-                raise RuntimeError(line[4:])
+                raise SignStop(explain(line)[0])
 
-    def _read(self, timeout: float) -> str:
+    @property
+    def digest(self) -> str:
+        """Algoritmul de hash potrivit cheii: cardurile cu chei P-384 (buletinul electronic) semnează SHA-384."""
+        if self.kind == "ecdsa":
+            bits = self.cert.public_key.bit_size
+            return "sha512" if bits > 384 else "sha384" if bits > 256 else "sha256"
+        return "sha256"
+
+    def _read(self, timeout: float, late: str = "", watch: bool = False) -> str:
         box = []
         t = threading.Thread(target=lambda: box.append(self.proc.stdout.readline()), daemon=True)
         t.start()
-        t.join(timeout)
+        end = time.time() + timeout
+        fronted = 0
+        while t.is_alive() and time.time() < end and not self.cancelled:
+            t.join(0.4)
+            if not watch or not t.is_alive():
+                continue
+            # Fereastra de PIN: o aducem în față dacă a rămas în spatele altei ferestre și spunem editorului ce vede omul.
+            d = winenv.pin_dialog()
+            if d:
+                if ACTIVE["phase"] != "pin":
+                    ACTIVE.update(phase="pin", since=time.time())
+                ACTIVE["dialog"] = "hidden" if d["hidden"] else "visible"
+                if not d["hidden"] and fronted < 3 and winenv.user32.GetForegroundWindow() != d["hwnd"]:
+                    fronted += 1
+                    winenv.bring_to_front(d["hwnd"])
+            elif ACTIVE["phase"] == "pin":
+                ACTIVE.update(phase="sign", since=time.time(), dialog="")  # PIN-ul a fost scris: cardul semnează
+        if self.cancelled:
+            raise SignStop("Semnarea a fost anulată.")
         if not box:
-            self.close()
-            raise RuntimeError("Windows nu a răspuns la timp (fereastra de PIN a rămas deschisă?).")
+            self.kill()
+            raise SignStop(late or "Windows nu a răspuns la timp (fereastra de PIN a rămas deschisă?).")
         if not box[0]:
             err = (self.proc.stderr.read() or "").strip().splitlines()
-            raise RuntimeError(err[-1] if err else "Procesul de semnare s-a oprit.")
+            raise SignStop(err[-1] if err else "Procesul de semnare s-a oprit.")
         return box[0].strip()
 
     def sign_hash(self, algo: str, digest: bytes) -> bytes:
         with self.lock:
             self.proc.stdin.write(f"SIGN {algo.upper()} {base64.b64encode(digest).decode()}\n")
             self.proc.stdin.flush()
+            ACTIVE.update(phase="wait", since=time.time(), dialog="")
             # Cât timp omul scrie PIN-ul sau un coleg are stick-ul (FintaxySign așteaptă rândul), răspunsul întârzie.
-            line = self._read(600)
+            line = self._read(300, "Nu a venit niciun răspuns în 5 minute. Dacă fereastra de PIN nu a apărut, repornește "
+                                   "PDF Sign și încearcă din nou.", watch=True)
         if line.startswith("ERR "):
-            msg = line[4:]
-            if "cancel" in msg.lower() or "anulat" in msg.lower():
-                msg = "Semnarea a fost anulată (fereastra de PIN închisă)."
-            raise RuntimeError(msg)
+            msg, stop = explain(line)
+            raise (SignStop if stop else RuntimeError)(msg)
         sig = base64.b64decode(line[3:])
         if self.kind == "ecdsa":  # Windows dă r||s; în CMS semnătura ECDSA e DER
             sig = algos.DSASignature.from_p1363(sig).dump()
         return sig
+
+    def kill(self):
+        """Oprește procesul cu totul: fereastra de PIN deschisă de el se închide și ea."""
+        try:
+            subprocess.run(["taskkill", "/PID", str(self.proc.pid), "/T", "/F"], capture_output=True, creationflags=NO_WINDOW,
+                           timeout=10)
+        except Exception:
+            try:
+                self.proc.kill()
+            except Exception:
+                pass
 
     def close(self):
         try:
             self.proc.stdin.close()
             self.proc.wait(5)
         except Exception:
-            self.proc.kill()
+            self.kill()
 
 
 class WinSigner(signers.Signer):
@@ -251,7 +422,7 @@ def sign_pdf(signer: WinSigner, pdf: str, place: dict | None = None, reason: str
             else:
                 new_spec = fields.SigFieldSpec(field)  # invizibilă
     name = signer.key.cert.subject.native.get("common_name", "")
-    meta = signers.PdfSignatureMetadata(field_name=field, md_algorithm="sha256", subfilter=fields.SigSeedSubFilter.PADES,
+    meta = signers.PdfSignatureMetadata(field_name=field, md_algorithm=signer.key.digest, subfilter=fields.SigSeedSubFilter.PADES,
                                         reason=reason or None, location=location or None, name=name or None)
     style = TextStampStyle(stamp_text=plain(f"Semnat digital de\n{name}\n") + "%(ts)s", timestamp_format="%d.%m.%Y %H:%M",
                            border_width=1, border_color=(0.55, 0.6, 0.7))
@@ -277,30 +448,48 @@ def first_empty_field(pdf: str) -> str:
         return next((f["name"] for f in signature_fields(doc) if not f["signed"] and f["visible"]), "")
 
 
-def sign_many(thumb: str, items: list, reason: str = "", location: str = "", on_done=None, key: WinKey | None = None) -> list:
+def sign_many(thumb: str, items: list, reason: str = "", location: str = "", on_done=None, key: WinKey | None = None,
+              hwnd: int = 0) -> list:
     """Semnează mai multe PDF-uri cu o singură deschidere a cheii (PIN-ul o dată).
-    items: [{"path": ..., "place": ... | "auto"}]; „auto” = câmpul gol al documentului dacă are, altfel invizibilă."""
-    key = key or WinKey(thumb)
+    items: [{"path": ..., "place": ... | "auto"}]; „auto” = câmpul gol al documentului dacă are, altfel invizibilă.
+    hwnd: fereastra editorului, deasupra căreia apare fereastra de PIN."""
+    if not BUSY.acquire(blocking=False):
+        raise RuntimeError("O semnare e deja în curs. Scrie PIN-ul în fereastra Windows sau apasă Anulează, apoi încearcă din nou.")
     results = []
     try:
+        ACTIVE.update(key=None, phase="open", since=time.time(), dialog="", file="", done=0, total=len(items))
+        if key is None:
+            key = WinKey(thumb, hwnd=hwnd)
+        ACTIVE["key"] = key
         signer = WinSigner(key)
         for it in items:
             t = time.time()
+            ACTIVE["file"] = Path(it["path"]).name
             place = it.get("place")
-            if place == "auto":
-                f = first_empty_field(it["path"])
-                place = {"field": f} if f else None
             try:
+                if not Path(it["path"]).is_file():
+                    raise FileNotFoundError("Fișierul nu mai există.")
+                if place == "auto":
+                    f = first_empty_field(it["path"])
+                    place = {"field": f} if f else None
                 out = sign_pdf(signer, it["path"], place, reason, location)
                 res = {"path": it["path"], "ok": True, "out": out, "s": round(time.time() - t, 1)}
+            except SignStop as err:
+                # PIN greșit, card blocat sau anulare: nu mai întrebăm la fiecare fișier (fiecare încercare costă un PIN).
+                results.append({"path": it["path"], "ok": False, "error": str(err), "stopped": True})
+                break
             except Exception as err:
                 res = {"path": it["path"], "ok": False, "error": str(err)}
-                if "anulat" in str(err):  # PIN-ul refuzat: nu mai întrebăm la fiecare fișier
-                    results.append(res)
-                    break
             results.append(res)
+            ACTIVE["done"] = len(results)
             if on_done:
                 on_done(res)
+    except SignStop as err:  # cheia nu s-a putut deschide
+        results.append({"path": items[0]["path"] if items else "", "ok": False, "error": str(err), "stopped": True})
     finally:
-        key.close()
+        k = ACTIVE["key"] or key
+        ACTIVE.update(key=None, phase="", dialog="", file="")
+        if k is not None:
+            k.close()
+        BUSY.release()
     return results

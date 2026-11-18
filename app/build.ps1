@@ -28,14 +28,25 @@ Run $py -m PyInstaller --noconfirm --clean --windowed --name 'PDF Sign' `
     --paths (Join-Path $root 'bin') `
     --add-data "$(Join-Path $root 'editor');editor" `
     --hidden-import editor_server --hidden-import fx_sign --hidden-import signature_transparent --hidden-import certsign `
-    --hidden-import localtools --collect-submodules pdf2docx --collect-data docx `
+    --hidden-import localtools --hidden-import winenv --hidden-import deps --hidden-import acp_chat `
+    --add-data "$(Join-Path $here 'tessdata');tessdata" `
+    --collect-submodules pdf2docx --collect-data docx `
     --collect-data pyhanko --collect-submodules pyhanko.sign --collect-submodules pyhanko_certvalidator `
     --exclude-module pymupdf.layout --exclude-module pymupdf4llm `
     --distpath $dist --workpath (Join-Path $root 'build') --specpath (Join-Path $root 'build') `
     (Join-Path $root 'bin\desktop.py')
 
-Copy-Item (Join-Path $here 'install.ps1'), (Join-Path $here 'Instalare.cmd'), (Join-Path $here 'Dezinstalare.cmd') $app
+Copy-Item (Join-Path $here 'install.ps1'), (Join-Path $here 'Instalare.cmd'), (Join-Path $here 'Dezinstalare.cmd'), (Join-Path $root 'LICENSE') $app
 $version = (Get-Content (Join-Path $root '.claude-plugin\plugin.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
 Set-Content (Join-Path $app 'version.txt') $version -Encoding ASCII
 Compress-Archive -Path $app -DestinationPath $zip -CompressionLevel Optimal
 "Gata: $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB)"
+
+# Un singur fișier de descărcat: PDF-Sign-Setup.exe are zip-ul în el, îl despachetează și rulează install.ps1.
+# csc din .NET Framework 4 (vine cu Windows), ca la PdfSign.cs.
+$setup = Join-Path $dist 'PDF-Sign-Setup.exe'
+$csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+Run $csc /nologo /target:winexe /optimize+ "/out:$setup" "/win32icon:$(Join-Path $here 'pdf-sign.ico')" `
+    "/resource:$zip,app.zip" /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.IO.Compression.dll `
+    /r:System.IO.Compression.FileSystem.dll (Join-Path $here 'Setup.cs')
+"Gata: $setup ($([math]::Round((Get-Item $setup).Length / 1MB, 1)) MB)"
