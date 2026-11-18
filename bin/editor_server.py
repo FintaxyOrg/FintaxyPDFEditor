@@ -38,7 +38,7 @@ from fx_sign import MM, STATE, label_of, library, out, stamp, undo_file
 # În aplicația portabilă (PyInstaller) folderul editor/ e despachetat în sys._MEIPASS.
 EDITOR_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)) / "editor"
 LOCK = threading.RLock()  # PyMuPDF nu e sigur pe mai multe fire
-TOKEN = secrets.token_urlsafe(18)
+TOKEN = os.environ.get("FX_TOKEN") or secrets.token_urlsafe(18)  # FX_TOKEN: token fix, doar la teste
 LIB = ""
 STANDALONE = False  # pornit de desktop.py (aplicația separată), nu de mod
 CLIENTS: dict = {}  # ferestrele deschise (doar în aplicația separată): id -> ultimul semn de viață
@@ -351,7 +351,10 @@ class Stirling:
 
         scripts = Path(sysconfig.get_path("scripts", f"{os.name}_user"))
         paths = {
-            "soffice": pf / "LibreOffice" / "program" / "soffice.exe",
+            # soffice.com (de consolă) răspunde la verificarea versiunii în ~0,3 s; soffice.exe trece uneori de cele
+            # 5 s ale lui Stirling, care atunci dezactivează toate conversiile LibreOffice. Nici nu deschide ferestre.
+            "soffice": next((p for p in (pf / "LibreOffice" / "program" / "soffice.com", pf / "LibreOffice" / "program" / "soffice.exe")
+                             if p.exists()), None),
             "calibre": pf / "Calibre2" / "ebook-convert.exe",
             "ocrmypdf": scripts / "ocrmypdf.exe",
             "weasyprint": glob1(tools / "weasyprint", "**/weasyprint.exe"),
@@ -403,6 +406,8 @@ class Stirling:
         props = [f"-Dsystem.customPaths.operations.{k}={v}" for k, v in paths.items()]
         tessdata = STATE / "tools" / "tessdata"
         tess = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Tesseract-OCR" / "tessdata"
+        if not tessdata.exists() and tess.exists():
+            tessdata = tess  # fără folderul nostru de limbi: cele instalate cu Tesseract (implicit Stirling caută o cale de Linux)
         if tessdata.exists() and tess.exists():
             # Pe lângă limbi, Tesseract vrea în același folder pdf.ttf și configs/ (pentru PDF-ul cu text).
             for f in tess.iterdir():
@@ -843,8 +848,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "max-age=3600" if cache else "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.end_headers()
+            self.wfile.write(body)
+        except ConnectionError:
+            pass  # fereastra s-a închis între timp (ex. în timp ce era deschisă alegerea fișierului)
 
     def json(self, obj, code=200):
         self.send(code, "application/json; charset=utf-8", json.dumps(obj, ensure_ascii=False).encode("utf-8"))
@@ -891,7 +899,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self.json(fx_sign.form_fields(open_doc(q["path"])[int(q["n"]) - 1]))
             if path == "/api/certs":
                 import certsign
-                return self.json(certsign.list_certs())
+                return self.json(certsign.list_certs(fresh=bool(q.get("fresh"))))
+            if path == "/api/certsign/status":
+                import certsign
+                return self.json(certsign.status())
+            if path == "/api/signenv":
+                # Starea FintaxySign (stick-ul din birou, de la distanță) și a cititoarelor de card.
+                import desktop
+                import winenv
+                fs = winenv.fintaxysign(desktop.settings().get("fintaxysign", ""))
+                if fs["path"] and fs["path"] != desktop.settings().get("fintaxysign"):
+                    desktop.save_settings(fintaxysign=fs["path"])  # îl găsim și când nu rulează
+                return self.json({"ok": True, "fintaxysign": fs})
             if path == "/api/font":
                 data, ctype = font_bytes(q["path"], q["ref"])
                 return self.send(200, ctype, data, cache=True) if data else self.send(404, "text/plain", b"")
@@ -917,14 +936,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if f and f.is_file() and (STATE / "captures").resolve() in f.resolve().parents:
                     return self.send(200, "image/png", f.read_bytes(), cache=True)
                 return self.send(404, "text/plain", b"")
+            if path == "/api/deps":
+                import deps
+                return self.json(deps.status())
+            if path == "/api/chat/status":
+                import acp_chat
+                import desktop
+                st = acp_chat.status()
+                cfg = desktop.settings()
+                # Jetoanele conexiunilor nu se întorc în pagină: doar dacă există.
+                st["connections"] = [{"name": m.get("name", ""), "url": m.get("url", ""), "hasToken": bool(m.get("token"))}
+                                     for m in cfg.get("mcp") or []]
+                st["userSettings"] = bool(cfg.get("chatUserSettings"))
+                return self.json(st)
+            if path == "/api/chat/events":
+                import acp_chat
+                chat = acp_chat.chat_for(q["path"])
+                revs = json.loads(q.get("revs") or "{}")
+                return self.json(chat.since(int(q.get("since") or 0), revs, wait=float(q.get("wait") or 25)))
             if path == "/api/stirling/tools":
                 return self.json(Stirling.tools())
             if path == "/api/stirling/certs":
                 return self.json(store_certs() if q.get("quick") else windows_certs())
             if path == "/api/info":
                 import desktop
-                info = {"ok": True, "standalone": STANDALONE, "lang": desktop.settings().get("lang", "ro"), "library": LIB,
-                        "stirling": bool(Stirling.install_dir())}
+                cfg = desktop.settings()
+                info = {"ok": True, "standalone": STANDALONE, "lang": cfg.get("lang", "ro"), "library": LIB,
+                        "stirling": bool(Stirling.install_dir()), "version": desktop.app_version(),
+                        "onboarded": cfg.get("onboarded", "")}
                 if STANDALONE:
                     info.update(apps=desktop.APPS, ai=desktop.current_ai())
                 return self.json(info)
@@ -1021,21 +1060,88 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if path == "/api/local":
                 # Uneltele făcute în aplicație (bin/localtools.py), fără Stirling.
                 import localtools
-                with LOCK:
-                    res = localtools.run(b["tool"], b.get("path") or "", b.get("fields") or {})
+                fields = {**(b.get("fields") or {}), "_dir": b.get("dir") or ""}  # _dir: folderul PDF-ului deschis
+                if b["tool"] in ("fromoffice", "fromweb", "replace"):
+                    # conversiile lungi (LibreOffice, Edge) nu țin editorul pe loc; „replace” își ia singur lacătul
+                    res = localtools.run(b["tool"], b.get("path") or "", fields)
+                else:
+                    with LOCK:
+                        res = localtools.run(b["tool"], b.get("path") or "", fields)
                 if res.get("out") and res.get("kind") in ("pdf", "file", "folder"):
                     event("tool", source=b.get("path") or "", out=res["out"], tool=b.get("label") or b["tool"], kind=res["kind"])
                 return self.json(res)
             if path == "/api/certsign":
                 # Un fișier sau mai multe (semnarea în bloc), cu o singură deschidere a cheii: PIN-ul o dată.
                 import certsign
+                import winenv
                 certsign.FITZ_LOCK = LOCK
                 items = b.get("items") or [{"path": b["path"], "place": b.get("place")}]
-                results = certsign.sign_many(b["thumb"], items, b.get("reason") or "", b.get("location") or "")
+                # Fereastra editorului, cât e încă în față (omul tocmai a apăsat Semnează): deasupra ei apare PIN-ul.
+                hwnd = winenv.parent_window(Path(items[0]["path"]).name if items else "")
+                results = certsign.sign_many(b["thumb"], items, b.get("reason") or "", b.get("location") or "", hwnd=hwnd)
                 for r in results:
                     if r.get("ok"):
                         event("tool", source=r["path"], out=r["out"], tool="Semnătură electronică", kind="pdf")
+                    else:
+                        print(time.strftime("%Y-%m-%d %H:%M:%S ") + f"certsign: {Path(r.get('path') or '').name}: {r.get('error')}",
+                              file=sys.stderr)
                 return self.json({"ok": True, "results": results})
+            if path == "/api/certsign/cancel":
+                import certsign
+                return self.json({"ok": True, "cancelled": certsign.cancel()})
+            if path == "/api/fintaxysign/start":
+                import desktop
+                import winenv
+                fs = winenv.fintaxysign(desktop.settings().get("fintaxysign", ""))
+                if not fs["running"]:
+                    if not fs["path"]:
+                        return self.json({"ok": False, "error": "Nu găsesc FintaxySign.exe pe calculator. Cere-i lui Cristian folderul FintaxySign."}, 404)
+                    os.startfile(fs["path"])  # noqa: S606 - aplicația de birou pentru stick
+                return self.json({"ok": True})
+            if path == "/api/deps/install":
+                import deps
+                return self.json({"ok": True, "job": deps.install(b["id"])})
+            if path == "/api/chat/send":
+                import acp_chat
+                import desktop
+                cfg = desktop.settings()
+                chat = acp_chat.chat_for(b["path"])
+                chat.send(str(b.get("text") or "").strip(), int(b.get("page") or 1), cfg.get("mcp") or [],
+                          bool(cfg.get("chatUserSettings")), b.get("images") or [])
+                return self.json({"ok": True})
+            if path == "/api/chat/permission":
+                import acp_chat
+                return self.json({"ok": acp_chat.chat_for(b["path"]).answer(b["id"], b.get("choice") or "deny")})
+            if path == "/api/chat/cancel":
+                import acp_chat
+                acp_chat.chat_for(b["path"]).cancel()
+                return self.json({"ok": True})
+            if path == "/api/chat/reset":
+                import acp_chat
+                acp_chat.chat_for(b["path"]).reset()
+                return self.json({"ok": True})
+            if path == "/api/chat/setup":
+                import acp_chat
+                return self.json({"ok": True, "setup": acp_chat.setup()})
+            if path == "/api/chat/login":
+                import acp_chat
+                acp_chat.open_login()
+                return self.json({"ok": True})
+            if path == "/api/chat/connections":
+                # Conexiunile chatului (de ex. Fintaxy CRM, prin MCP): nume, adresă, jeton. Un jeton gol păstrează
+                # jetonul deja salvat pentru aceeași adresă (pagina nu-l primește niciodată înapoi).
+                import desktop
+                old = {m.get("url"): m for m in desktop.settings().get("mcp") or []}
+                items = []
+                for m in b.get("connections") or []:
+                    name = re.sub(r"[^A-Za-z0-9_-]+", "-", str(m.get("name") or "").strip()).strip("-")[:40]
+                    url = str(m.get("url") or "").strip()
+                    if not name or not re.match(r"(?i)^https?://", url):
+                        return self.json({"ok": False, "error": "Fiecare conexiune are nevoie de un nume și de o adresă care începe cu https://"}, 400)
+                    token = str(m.get("token") or "").strip() or (old.get(url) or {}).get("token", "")
+                    items.append({"name": name, "url": url, "token": token})
+                desktop.save_settings(mcp=items, chatUserSettings=bool(b.get("userSettings")))
+                return self.json({"ok": True})
             if path == "/api/attachment":
                 out_path = save_attachment(b["path"], b["key"])
                 if b.get("how") == "open":
@@ -1053,7 +1159,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.json({"ok": True, "library": LIB, "count": len(library(LIB))})
             if path == "/api/settings":
                 import desktop
-                desktop.save_settings(**{k: v for k, v in b.items() if k in ("ai", "lang")})
+                desktop.save_settings(**{k: v for k, v in b.items() if k in ("ai", "lang", "onboarded")})
                 return self.json({"ok": True})
             if path == "/api/ping":
                 if STANDALONE:
@@ -1096,7 +1202,15 @@ def send_ai(app, c: dict, path: str, items: list) -> dict:
         return {}
     import desktop
     try:
-        sent = desktop.send(app, c, str(Path(path)))
+        if (app or desktop.current_ai()) == "chat":
+            import acp_chat
+            cfg = desktop.settings()
+            acp_chat.chat_for(path).send(desktop.message(c, str(Path(path))), int(c.get("page") or 1), cfg.get("mcp") or [],
+                                         bool(cfg.get("chatUserSettings")), [c["capture"]] if c.get("capture") else [])
+            desktop.save_settings(ai="chat")
+            sent = {"app": "chat", "name": desktop.APP_BY_ID["chat"]["name"], "note": "Am trimis comentariul în chatul cu Claude."}
+        else:
+            sent = desktop.send(app, c, str(Path(path)))
     except Exception as err:
         traceback.print_exc(file=sys.stderr)
         return {"sendError": f"Nu am putut trimite: {err}"}
@@ -1146,6 +1260,12 @@ def run(srv):
         srv.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
         pass
+    finally:
+        try:  # chatul cu Claude: oprim agentul odată cu aplicația
+            if "acp_chat" in sys.modules:
+                sys.modules["acp_chat"].shutdown()
+        except Exception:
+            pass
 
 
 def serve(lib: str):

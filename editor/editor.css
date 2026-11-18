@@ -318,3 +318,92 @@ body[data-tool=sigbox] .page { cursor: crosshair; }
   .sheet > .port { max-width: calc(100vh - 10mm); max-height: calc(100vw - 10mm); transform: rotate(-90deg); }
   .sheet > svg.port { width: calc(100vh - 10mm); height: calc(100vw - 10mm); }
 }
+
+/* semnătura electronică: de unde vine certificatul, ce PIN cere, starea FintaxySign */
+.pinhint { margin: -4px 0 8px; padding: 8px 10px; border-radius: 8px; background: #fff7e0; border: 1px solid #f0d58a; color: #5c4a12; font-size: 12.5px; line-height: 1.4; }
+.certrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: -2px 0 10px; }
+.fsrow { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #4b5266; }
+.fsrow .dot { width: 8px; height: 8px; border-radius: 50%; background: #9aa1b3; flex: none; }
+.fsrow .dot.ok { background: #1f9d55; }
+.fsrow .dot.warn { background: #e0a100; }
+.fsrow .dot.off { background: #c0392b; }
+.result.signing { display: flex; align-items: flex-start; gap: 8px; }
+.result.signing > span:not(.spin) { flex: 1; }
+
+/* ---- semnul de informație: textul lung stă în el, nu sub titlu ---- */
+.infomark { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 6px; border-radius: 50%;
+  border: 1px solid #b9c0cf; color: #6a7284; font: italic 600 11px/1 Georgia, serif; cursor: help; position: relative; vertical-align: 1px; flex: none; }
+.infomark:hover, .infomark:focus { border-color: var(--accent); color: var(--accent); outline: none; }
+.infomark:hover::after, .infomark:focus::after { content: attr(data-tip); position: absolute; z-index: 90; top: 22px; left: 50%; transform: translateX(-50%);
+  width: max-content; max-width: 260px; padding: 8px 10px; border-radius: 9px; background: #1c2230; color: #fff; font: 400 12.5px/1.4 "Segoe UI", system-ui, sans-serif;
+  white-space: normal; text-align: left; box-shadow: var(--shadow); pointer-events: none; }
+.drawer .infomark:hover::after, .drawer .infomark:focus::after { left: auto; right: -40px; transform: none; }
+.muted { color: var(--muted); } .small { font-size: 12px; } .grow { flex: 1; }
+
+/* ---- programe în plus, pașii chatului ---- */
+.deps, .chat-setup { display: flex; flex-direction: column; gap: 8px; }
+.chat-setup { margin: 14px 4px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fafbfd; }
+.chat-setup > b { font-size: 13.5px; }
+.dep { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; min-height: 44px; }
+.dep.ok { border-color: #cfe9dc; background: #f6fcf9; }
+.dep-name { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; }
+.dep-state { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--muted); max-width: 55%; text-align: right; }
+.dep.ok .dep-state { color: var(--ok); } .dep-state svg.i { width: 15px; height: 15px; }
+.dep button { flex: none; }
+
+/* ---- chatul cu Claude ---- */
+.rail [data-panel=chat] svg.i { stroke-width: 1.6; }
+.chat { display: flex; flex-direction: column; height: calc(100% - 51px); }
+.chat-list { flex: 1; overflow-y: auto; padding: 12px 12px 6px; display: flex; flex-direction: column; gap: 8px; }
+.msg { max-width: 100%; border-radius: 12px; padding: 8px 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.msg.user { align-self: flex-end; background: var(--accent); color: #fff; max-width: 88%; white-space: pre-wrap; border-bottom-right-radius: 4px; }
+.msg.bot { background: #f3f5f9; border-bottom-left-radius: 4px; }
+.msg.bot p { margin: 0 0 6px; } .msg.bot p:last-child { margin-bottom: 0; }
+.msg.bot ul, .msg.bot ol { margin: 2px 0 6px; padding-left: 20px; }
+.msg.bot h4 { margin: 6px 0 4px; font-size: 13.5px; }
+.msg.bot code { background: #e6e9f0; border-radius: 4px; padding: 0 4px; font: 12px Consolas, monospace; }
+.msg.bot pre { background: #1c2230; color: #e8ecf5; border-radius: 8px; padding: 8px 10px; overflow: auto; font: 12px/1.45 Consolas, monospace; margin: 4px 0; }
+.msg.bot table { border-collapse: collapse; margin: 4px 0; font-size: 12.5px; display: block; overflow-x: auto; }
+.msg.bot th, .msg.bot td { border: 1px solid var(--line); padding: 3px 7px; text-align: left; }
+.msg.bot a { color: var(--accent-ink); }
+.msg.thought { color: var(--muted); font-size: 12px; padding: 0 4px; } .msg.thought summary { cursor: pointer; } .msg.thought div { white-space: pre-wrap; margin-top: 4px; }
+.msg.tool { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); padding: 2px 4px; }
+.msg.tool .tdot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; } .msg.tool.bad .tdot { background: var(--danger); }
+.msg.tool .spin { margin: 0; }
+.msg.perm { border: 1px solid #f0d58a; background: #fffaea; }
+.msg.perm.allowed { border-color: #cfe9dc; background: #f6fcf9; } .msg.perm.denied, .msg.perm.cancelled { border-color: var(--line); background: #f6f7fa; color: var(--muted); }
+.msg.perm .ptitle { margin: 2px 0; } .msg.perm code { display: block; font: 12px Consolas, monospace; color: #4b5266; margin: 4px 0; overflow-wrap: anywhere; }
+.pbtns { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; } .pstate { font-size: 12px; margin-top: 4px; }
+.msg.err { background: #fff4f6; border: 1px solid #f4c7d0; color: #9b2338; }
+.chat-empty { margin: auto 0; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px 4px; }
+.chip { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 12px; } .chip:hover { background: var(--accent-soft); border-color: #c8d5f9; }
+.chat-in { display: flex; align-items: flex-end; gap: 8px; margin: 6px 12px 12px; padding: 8px 8px 8px 12px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+.chat-in:focus-within { border-color: var(--accent); }
+.chat-in textarea { flex: 1; border: 0; outline: none; resize: none; font: inherit; max-height: 140px; padding: 4px 0; background: transparent; }
+.chat-send { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; flex: none; }
+.chat-send.stop { background: #1c2230; } .chat-send svg.i { width: 16px; height: 16px; } .chat-send:disabled { background: #c9d4ef; }
+.conns { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.conn { display: grid; grid-template-columns: 1fr; gap: 5px; padding: 9px; border: 1px solid var(--line); border-radius: 10px; }
+.conn input, .ob input[type=text] { height: 32px; border: 1px solid var(--line); border-radius: 8px; padding: 0 9px; font: inherit; outline: none; }
+.conn input:focus { border-color: var(--accent); }
+.ttl { display: flex; align-items: center; margin: 4px 0; } .checkrow { display: flex; align-items: center; gap: 7px; margin: 12px 0; }
+
+/* ---- ghidul de la prima pornire ---- */
+.ob { position: fixed; inset: 0; z-index: 80; background: rgba(18, 24, 40, .42); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.ob-card { width: min(520px, 100%); max-height: min(620px, 100%); display: flex; flex-direction: column; background: #fff; border-radius: 16px; box-shadow: 0 24px 70px rgba(18, 28, 56, .32); }
+.ob-head { display: flex; align-items: center; padding: 16px 12px 6px 20px; } .ob-head h2 { margin: 0; font-size: 17px; }
+.ob-body { padding: 8px 20px 12px; overflow-y: auto; min-height: 150px; display: flex; flex-direction: column; gap: 8px; }
+.ob-list { margin: 4px 0; padding-left: 18px; display: flex; flex-direction: column; gap: 9px; font-size: 14px; }
+.ob-list.keys { list-style: none; padding-left: 0; }
+kbd { display: inline-block; min-width: 22px; text-align: center; padding: 1px 6px; border: 1px solid #cfd4de; border-bottom-width: 2px; border-radius: 6px; background: #f6f7fa; font: 600 12px "Segoe UI", sans-serif; }
+.ob-foot { display: flex; align-items: center; gap: 12px; padding: 12px 20px 16px; border-top: 1px solid var(--line); }
+.ob-dots { display: flex; gap: 5px; } .ob-dots span { width: 7px; height: 7px; border-radius: 50%; background: #d7dbe5; } .ob-dots .on { background: var(--accent); } .ob-dots .done { background: #9db7ff; }
+@media print { .ob { display: none !important; } }
+.dep-name .muted { margin-left: 6px; }
+
+/* ---- ecranul de start (aplicația pornită fără PDF) ---- */
+.start-card { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 34px 44px; background: #fff; border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); color: var(--ink); }
+.start-card img { width: 56px; height: 56px; } .start-card h1 { margin: 0; font-size: 22px; }
+.start-row { display: flex; align-items: center; gap: 12px; }
+button.primary.big { height: 40px; padding: 0 22px; font-size: 14.5px; border-radius: 11px; }
+.ob:focus { outline: none; }

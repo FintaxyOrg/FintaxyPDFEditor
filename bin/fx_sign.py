@@ -32,7 +32,8 @@ import fitz  # noqa: E402  PyMuPDF
 fitz.TOOLS.mupdf_display_errors(False)
 MM = 72 / 25.4
 SVG_LIMIT = 118000  # Svg-ul din chat are voie la 131072 caractere
-STATE = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "fintaxy-pdf-sign"
+# FX_STATE: alt folder de stare, pentru teste (ca să nu atingă setările omului).
+STATE = Path(os.environ.get("FX_STATE") or Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "fintaxy-pdf-sign")
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
