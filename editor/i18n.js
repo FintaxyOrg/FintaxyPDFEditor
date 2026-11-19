@@ -34,6 +34,9 @@ const EN = {
   'Toate paginile au deja text căutabil. Alege „Refă OCR pe toate paginile” dacă textul e greșit.': 'All pages already have searchable text. Choose “Redo OCR on all pages” if the text is wrong.',
   'Nu am găsit niciunul dintre texte în document (într-un PDF scanat rulează întâi OCR).': 'None of the texts were found in the document (on a scanned PDF run OCR first).',
   // semnătura electronică: surse, PIN, starea FintaxySign, fazele semnării (v0.15)
+  'Formularul inteligent (XFA) nu se poate modifica aici: îl citești, îl printezi și îl semnezi electronic.': 'The smart form (XFA) cannot be changed here: you can read it, print it and sign it electronically.',
+  'Formular inteligent (XFA): semnătura se adaugă invizibilă și se vede în panoul de semnături.': 'Smart form (XFA): the signature is added invisibly and shows in the signatures panel.',
+  'Formularul nu a putut fi desenat': 'The form could not be drawn', 'se vede pagina din fișier. Deschide-l în Adobe Reader sau încearcă din nou.': 'showing the page stored in the file. Open it in Adobe Reader or try again.',
   'FintaxySign: pornit, stick conectat': 'FintaxySign: running, stick connected',
   'FintaxySign: oprit': 'FintaxySign: not running',
   'FintaxySign: neinstalat pe acest calculator': 'FintaxySign: not installed on this computer',
