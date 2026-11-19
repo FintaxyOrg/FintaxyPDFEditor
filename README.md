@@ -8,6 +8,7 @@ Aplicație Windows pentru semnat și editat PDF-uri:
 - **PDF-uri ANAF** (formulare XFA cu XML atașat): le citești, deschizi XML-ul și le semnezi în câmpul „Semnătura”; și formularele „inteligente” nesalvate din Adobe (D300, D394, D101…), care în alte programe arată doar „Please wait…”;
 - **organizarea paginilor**: miniaturi pe care le tragi în altă ordine, le ștergi sau le rotești (tasta **P**);
 - **unelte PDF direct în aplicație**: unire, împărțire, extragere și ștergere de pagini, comprimare, PDF → Word / Excel / imagini / text, imagini → PDF, Word / Excel → PDF (cu Microsoft Office), parolă, watermark, numere de pagină, aplatizare, validarea semnăturii, reparare;
+- **validare și semnare declarații**: XML-ul unei declarații (D100, D112, D300, D390, D394…) e verificat cu validatorul oficial al ANAF, adus și ținut la zi de aplicație; se face PDF-ul și îl semnezi cu certificatul din Windows;
 - **căutare globală Ctrl+K**: orice unealtă sau acțiune, scrisă cu sau fără diacritice;
 - **printare** (butonul cu imprimanta sau **Ctrl+P**): doar paginile documentului, câte una pe foaie, întregi pe hârtia aleasă, cu semnăturile puse și nesalvate încă, fără bara editorului și fără data sau adresa browserului;
 - **OCR** (text căutabil peste scanări, română + engleză), **redactare** (textul e scos din PDF) și **caută și înlocuiește**, toate fără nimic instalat;
@@ -58,6 +59,18 @@ Un PDF deja semnat (de exemplu o declarație semnată de alt administrator) prim
 - **Declarații ANAF** (D100, D112, D300 etc., formulare XFA): se văd ca în Adobe; deasupra apare XML-ul atașat, cu **Deschide** și **Arată în folder** (se salvează în `<nume> - atasamente`). Datele se completează în programul ANAF (Soft J / DUKIntegrator) sau în Adobe Reader; aici le citești și le semnezi.
 - **Formulare „inteligente” dinamice** (cele care în alte programe arată doar „Please wait…”): fișierul conține doar acea pagină, iar formularul adevărat e desenat de aplicație (pdf.js + Edge, câteva secunde la prima deschidere). Le citești, le printezi și le semnezi electronic; semnătura se adaugă invizibilă, pe fișierul original. Nu se pot edita aici.
 
+### Validare și semnare declarații
+
+Unelte → **Validare și semnare declarații** (sau butonul **Validează** de lângă XML-ul atașat unui PDF ANAF).
+
+1. Alegi XML-ul declarației, exportat din programul de contabilitate, sau PDF-ul ANAF care îl are atașat. Tipul (D300, D112…) e recunoscut din fișier.
+2. **Validează**: fișierul e verificat cu validatorul oficial al ANAF (cel din DUKIntegrator, „soft J”). Erorile apar cu explicația lor și cu mesajul ANAF dedesubt.
+3. Dacă nu are erori, lângă XML apare PDF-ul declarației (cu XML-ul atașat), iar dedesubt alegi certificatul și apeși **Semnează**: rezultatul e `<nume>_semnat.pdf`, pe care îl depui în SPV.
+
+Validatoarele nu sunt în kit: aplicația le ia singură de pe site-ul ANAF (`static.anaf.ro`), în folderul ei, doar pentru declarațiile pe care le folosești, și verifică o dată pe zi dacă ANAF a publicat o versiune nouă. Java, de care au nevoie, e cel adus cu Stirling PDF (sau, dacă lipsește, unul mic adus atunci). Fără internet merg validatoarele deja aduse.
+
+După semnare, validatorul ANAF verifică și PDF-ul semnat. La certificatele cu cheie RSA (tokenurile calificate obișnuite) confirmă semnătura; la buletinul electronic (cheie ECDSA) nu o poate verifica, fiindcă programul ANAF e vechi. În ambele cazuri, dacă serverul ANAF primește declarația se vede abia la depunere, din recipisă.
+
 ### Unelte PDF
 
 Butonul cu pătrățele din stânga (sau **Ctrl+K**) arată toate uneltele. Cele obișnuite merg direct, fără nimic instalat; rezultatul apare lângă PDF, cu un sufix (`_unit`, `_comprimat`, `_word.docx` etc.). Word / Excel → PDF are nevoie de Microsoft Office.
@@ -104,7 +117,7 @@ Făcut după „Ask AI” din Fintaxy CRM, prin ACP (Agent Client Protocol), pe 
 
 | Folder | Ce e |
 |---|---|
-| `bin/` | aplicația, în Python: `desktop.py` (pornirea, ferestrele, AI), `editor_server.py` (serverul local al editorului, Stirling), `fx_sign.py` (scrierea în PDF cu PyMuPDF, formulare), `certsign.py` (semnătura electronică: pyHanko + cheia din Windows prin PowerShell), `winenv.py` (ce află de la Windows: fereastra de PIN, cititoare, FintaxySign, unde stă cheia fiecărui certificat), `localtools.py` (uneltele PDF fără Stirling, OCR, redactare), `xfaview.py` (formularele XFA dinamice: PDF de vizualizare făcut cu pdf.js din `editor/xfa` și tipărit cu Edge), `deps.py` (programele în plus și instalarea lor), `acp_chat.py` (chatul cu Claude prin ACP), `signature_transparent.py` (fundal transparent la semnături) |
+| `bin/` | aplicația, în Python: `desktop.py` (pornirea, ferestrele, AI), `editor_server.py` (serverul local al editorului, Stirling), `fx_sign.py` (scrierea în PDF cu PyMuPDF, formulare), `certsign.py` (semnătura electronică: pyHanko + cheia din Windows prin PowerShell), `winenv.py` (ce află de la Windows: fereastra de PIN, cititoare, FintaxySign, unde stă cheia fiecărui certificat), `localtools.py` (uneltele PDF fără Stirling, OCR, redactare), `xfaview.py` (formularele XFA dinamice: PDF de vizualizare făcut cu pdf.js din `editor/xfa` și tipărit cu Edge), `deps.py` (programele în plus și instalarea lor), `anaf.py` (validare și semnare declarații: validatoarele ANAF aduse din `versiuni.xml`, rulate cu Java în linie de comandă), `acp_chat.py` (chatul cu Claude prin ACP), `signature_transparent.py` (fundal transparent la semnături) |
 | `editor/` | interfața (HTML, CSS, JS), servită de `editor_server.py` pe 127.0.0.1 cu token; `assist.js` = chatul, programele în plus, ghidul de pornire |
 | `app/` | `build.ps1` (versiunea portabilă + `PDF-Sign-Setup.exe`), `Setup.cs` (fișierul unic de instalare), `install.ps1` + `Instalare.cmd` / `Dezinstalare.cmd`, iconița, `tessdata/` (limbile OCR) |
 | `tests/` | testele aplicației (vezi mai jos) |
@@ -133,6 +146,8 @@ Toate rulează cu Python-ul din `.venv-build`, pe documente făcute pe loc, înt
 .venv-build\Scripts\python.exe tests\test_sign.py                 # semnătura electronică cap-coadă (RSA și P-384, din .pfx de test)
 .venv-build\Scripts\python.exe tests\test_chat.py                 # chatul prin ACP, cu un agent simulat
 .venv-build\Scripts\python.exe tests\test_xfa.py                  # formularele XFA dinamice (ANAF): desenare, editor, semnare
+.venv-build\Scripts\python.exe tests\test_anaf.py C:\tmp\a          # validare și semnare declarații, cu un „site ANAF” și un validator simulate
+.venv-build\Scripts\python.exe tests\test_anaf.py C:\tmp\a --live   # la fel, cu validatoarele adevărate de la ANAF (--clean: își aduce și Java)
 .venv-build\Scripts\python.exe tests\dev_server.py C:\tmp\t 8765   # serverul de test (lasă-l pornit), apoi:
 .venv-build\Scripts\python.exe tests\test_tools.py C:\tmp\t 8765   # editorul + toate uneltele locale + toate uneltele Stirling
 .venv-build\Scripts\python.exe tests\test_chat_live.py            # chatul pe viu (folosește abonamentul Claude al calculatorului)
@@ -142,7 +157,7 @@ Toate rulează cu Python-ul din `.venv-build`, pe documente făcute pe loc, înt
 
 `tests\ui_audit.js` se lipește în consola editorului (sau se rulează cu un instrument de automatizare): deschide fiecare panou și fiecare formular de unealtă și caută elemente ieșite din panou, text tăiat, panouri care nu se derulează și texte netraduse.
 
-Ce nu pot verifica testele: PIN-ul adevărat al unui card (îl scrie doar omul, în fereastra Windows) și instalarea pe un calculator curat.
+Ce nu pot verifica testele: PIN-ul adevărat al unui card (îl scrie doar omul, în fereastra Windows), instalarea pe un calculator curat și primirea unei declarații de către serverul ANAF (se vede doar la o depunere adevărată în SPV).
 
 ### Mod-ul pentru Claude Code
 

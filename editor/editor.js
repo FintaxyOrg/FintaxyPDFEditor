@@ -1210,6 +1210,7 @@ async function openToolForm(t) {
   if (t.custom === 'certsign') return openCertSign()
   if (t.custom === 'bulksign') return openBulkSign()
   if (t.custom === 'organize') return openOrganize()
+  if (t.custom === 'anaf') return openAnaf()
   if (t.local) return openLocalTool(t)
   await refreshStirling()
   const body = h('div', { class: 'db' })
@@ -1561,6 +1562,141 @@ function openBulkSign() {
   })
 }
 
+// ---------- validare și semnare declarații (validatoarele ANAF, bin/anaf.py) ----------
+// Omul alege XML-ul declarației (sau PDF-ul ANAF cu XML atașat); validatorul oficial ANAF îl verifică, face PDF-ul
+// și semnătura electronică se pune cu certificatul din Windows. Textele lungi stau în semnul „i”, nu pe ecran.
+const infoMark = text => h('span', { class: 'infomark', 'data-tip': tr(text), tabindex: '0' }, 'i')
+const ANAF_TIP = 'Alegi XML-ul declarației (D100, D112, D300, D390, D394…) sau PDF-ul ANAF care îl are atașat. Îl verifică validatorul oficial al ANAF (DUKIntegrator), pe care aplicația îl aduce și îl ține la zi singură de pe site-ul ANAF. Dacă nu are erori, se face PDF-ul lângă XML și îl semnezi cu certificatul din Windows.'
+const ANAF_TYPE_TIP = 'Tipul se citește din fișier. Alege-l de mână doar dacă nu e recunoscut.'
+const ANAF_SIGN_TIP = 'Semnătura se pune cu certificatul din Windows (token, stick-ul din birou, buletin). Apoi validatorul ANAF verifică și PDF-ul semnat. Dacă îl primește și serverul ANAF se vede abia la depunerea în SPV.'
+function openAnaf(preset) {
+  closePop()
+  const form = h('div', { class: 'form' })
+  const d = openDrawer('Validare și semnare declarații', h('div', { class: 'db' }, form))
+  d.querySelector('.dh h2').append(infoMark(ANAF_TIP))
+  d.querySelector('.dh').prepend(h('button', { class: 'icon', title: 'Înapoi la unelte', onclick: () => openTools() }, icon('back')))
+  let file = preset || (S.doc?.attachments?.some(a => /\.xml$/i.test(a.name)) ? S.doc.path : '')
+  const fname = h('span', { class: 'bn' })
+  const pick = h('button', { class: 'secondary', type: 'button' }, 'Alege…')
+  const type = h('select', {}, h('option', { value: '' }, 'Automat'))
+  const go = h('button', { class: 'primary' }, 'Validează')
+  const result = h('div')
+  const drawFile = () => {
+    fname.textContent = file ? base(file) : tr('Niciun fișier ales')
+    fname.title = file
+    go.disabled = !file
+  }
+  pick.addEventListener('click', async () => {
+    try {
+      const r = await post('pickmany', { dir: S.doc?.dir || '', kind: 'anaf' })
+      if (r.paths.length) { file = r.paths[0]; result.replaceChildren(); drawFile() }
+    } catch (err) {
+      toast(err.message, { err: true })
+    }
+  })
+  form.append(
+    h('div', { class: 'field' }, h('span', {}, 'Declarația (XML sau PDF) *'), h('div', { class: 'brow' }, fname, pick)),
+    h('label', { class: 'field' }, h('span', {}, 'Tip', infoMark(ANAF_TYPE_TIP)), type),
+    h('div', { class: 'buttons' }, go), result)
+  drawFile()
+  api('anaf/status').then(st => {
+    type.append(...st.types.map(t => h('option', { value: t.code }, t.name ? `${t.code} · ${tr(t.name)}` : t.code)))
+  }).catch(() => {})
+
+  const signBox = r => {
+    const box = h('div', { class: 'form anaf-sign' })
+    box.append(h('div', { class: 'grp' }, 'Semnează', infoMark(ANAF_SIGN_TIP)))
+    const thumb = certPicker(box)
+    const sign = h('button', { class: 'primary', type: 'button' }, 'Semnează')
+    const out = h('div')
+    box.append(h('div', { class: 'buttons' }, sign), out)
+    sign.addEventListener('click', async () => {
+      const t = thumb()
+      if (!t) return out.replaceChildren(h('div', { class: 'result err' }, 'Alege certificatul.'))
+      sign.disabled = true
+      try {
+        const s = await runSign({ thumb: t, items: [{ path: r.sign.path, place: r.sign.place }], reason: `Declarație ${r.decl}` }, out)
+        const res = s.results[0]
+        if (!res?.ok) throw new Error(res?.error || 'Semnarea nu a reușit.')
+        const cards = [showResult({ kind: 'pdf', out: res.out })]
+        if (r.source === 'xml') {
+          out.replaceChildren(h('div', { class: 'result signing' }, h('span', { class: 'spin' }), h('span', {}, 'Verific PDF-ul semnat cu validatorul ANAF…')))
+          try {
+            const v = await post('anaf/verify', { path: res.out, decl: r.decl })
+            cards.push(h('div', { class: v.status === 'ok' ? 'result ok' : v.status === 'errors' ? 'result err' : 'warn anaf-note' },
+              h('div', {}, (v.status === 'ok' ? '✓ ' : '') + tr(v.note)), ...v.lines.map(l => h('small', { class: 'anaf-raw' }, l))))
+          } catch (err) {
+            cards.push(h('div', { class: 'warn anaf-note' }, `${tr('PDF-ul e semnat, dar verificarea lui cu validatorul ANAF nu a mers')}: ${err.message}`))
+          }
+        }
+        out.replaceChildren(...cards)
+        toast(`Semnat electronic: ${base(res.out)}`)
+      } catch (err) {
+        out.replaceChildren(h('div', { class: 'result err' }, err.message))
+      } finally {
+        sign.disabled = false
+      }
+    })
+    return box
+  }
+  const show = r => {
+    if (r.status === 'unknown') {
+      result.replaceChildren(h('div', { class: 'warn anaf-note' }, r.note))
+      return type.focus()
+    }
+    const errors = r.messages.filter(m => m.level === 'error').length
+    const warns = r.messages.length - errors
+    const good = r.status === 'ok' || r.status === 'warnings'
+    const title = r.status === 'ok' ? '✓ Fără erori' : r.status === 'warnings' ? `✓ ${tr('Fără erori')} · ${warns} ${tr(warns === 1 ? 'atenționare' : 'atenționări')}`
+      : r.status === 'errors' ? `✗ ${errors} ${tr(errors === 1 ? 'eroare' : 'erori')}` : '✗ Nu a putut fi validat'
+    const meta = [`${r.decl}${r.name ? ' · ' + tr(r.name) : ''}`, r.versions.J ? `${tr('validator ANAF')} ${r.versions.J}` : '',
+      r.updated.length ? tr('adus acum de la ANAF') : '', r.online ? '' : tr('fără internet: nu am verificat dacă e cel mai nou')].filter(Boolean).join(' · ')
+    const card = h('div', { class: `result ${good ? 'ok' : 'err'}` }, h('div', { class: 'anaf-title' }, title), h('small', { class: 'anaf-meta' }, meta))
+    if (r.note) card.append(h('div', { class: 'anaf-hint' }, r.note))
+    for (const m of r.messages) {
+      card.append(h('div', { class: `anaf-msg ${m.level}` },
+        h('b', {}, tr(m.level === 'warning' ? 'Atenționare' : 'Eroare') + (m.section ? ` · ${m.section}` : '')),
+        m.hint ? h('div', { class: 'anaf-hint' }, m.hint) : null,
+        ...m.lines.map(l => h('small', { class: 'anaf-raw' }, l))))
+    }
+    const parts = [card]
+    if (r.pdf) {
+      parts.push(h('div', { class: 'result ok' }, h('div', {}, `${tr('PDF făcut')}: ${base(r.pdf)}`), h('div', { class: 'rb' },
+        h('button', { class: 'secondary', type: 'button', onclick: () => openDoc(r.pdf) }, 'Deschide aici'),
+        h('button', { class: 'secondary', type: 'button', onclick: () => post('open', { path: r.pdf, how: 'explorer' }) }, 'Arată în Explorer'))))
+    }
+    if (r.sign) parts.push(signBox(r))
+    result.replaceChildren(...parts)
+  }
+  go.addEventListener('click', async () => {
+    go.disabled = true
+    const text = h('span', {}, 'Se pregătește…')
+    result.replaceChildren(h('div', { class: 'result signing' }, h('span', { class: 'spin' }), text))
+    let on = true
+    const poll = async () => {
+      while (on) {
+        await new Promise(r => setTimeout(r, 700))
+        if (!on) break
+        try {
+          const st = await api('anaf/status')
+          if (st.job.line) text.textContent = tr(st.job.line)
+        } catch { /* serverul e ocupat: mai întrebăm */ }
+      }
+    }
+    poll()
+    try {
+      const r = await post('anaf/run', { path: file, decl: type.value })
+      on = false
+      show(r)
+    } catch (err) {
+      on = false
+      result.replaceChildren(h('div', { class: 'result err' }, err.message))
+    } finally {
+      go.disabled = !file
+    }
+  })
+}
+
 // ---------- bara documentului: formulare XFA (ANAF), atașamente, câmp de semnătură gol ----------
 function renderDocBar() {
   $('#docbar')?.remove()
@@ -1579,7 +1715,8 @@ function renderDocBar() {
     rows.push(h('div', { class: 'row' }, h('b', {}, 'Atașat:'), h('span', { class: 'att' }, a.name),
       h('span', { class: 'meta' }, a.size ? `${Math.max(1, Math.round(a.size / 1024))} KB` : ''),
       h('button', { class: 'secondary', onclick: () => act('open') }, 'Deschide'),
-      h('button', { class: 'secondary', onclick: () => act('folder') }, 'Arată în folder')))
+      h('button', { class: 'secondary', onclick: () => act('folder') }, 'Arată în folder'),
+      /\.xml$/i.test(a.name) ? h('button', { class: 'secondary', title: 'Verifică XML-ul atașat cu validatorul ANAF', onclick: () => openAnaf(PATH) }, 'Validează') : null))
   }
   const empty = d.sigfields.filter(f => !f.signed && f.visible)
   if (empty.length) {

@@ -232,6 +232,43 @@ const EN = {
     'Qualified digital signature with a Windows certificate: the eID card, a token or the office stick (FintaxySign).',
   'Semnătură digitală calificată cu un certificat din Windows: buletinul electronic, un token sau stick-ul din birou (FintaxySign). Windows îți cere PIN-ul.':
     'Qualified digital signature with a Windows certificate: the eID card, a token or the office stick (FintaxySign). Windows asks for your PIN.',
+  // validare și semnare declarații (validatoarele ANAF)
+  'Validare și semnare declarații': 'Validate and sign tax returns',
+  'Verifică XML-ul unei declarații cu validatorul ANAF, face PDF-ul și îl semnează.': 'Checks a tax return XML with the ANAF validator, makes the PDF and signs it.',
+  'Alegi XML-ul declarației (D100, D112, D300, D390, D394…) sau PDF-ul ANAF care îl are atașat. Îl verifică validatorul oficial al ANAF (DUKIntegrator), pe care aplicația îl aduce și îl ține la zi singură de pe site-ul ANAF. Dacă nu are erori, se face PDF-ul lângă XML și îl semnezi cu certificatul din Windows.':
+    'Pick the tax return XML (D100, D112, D300, D390, D394…) or the ANAF PDF that has it attached. It is checked by the official ANAF validator (DUKIntegrator), which the app fetches and keeps up to date by itself from the ANAF site. If there are no errors, the PDF is made next to the XML and you sign it with your Windows certificate.',
+  'Tipul se citește din fișier. Alege-l de mână doar dacă nu e recunoscut.': 'The type is read from the file. Pick it by hand only if it is not recognised.',
+  'Semnătura se pune cu certificatul din Windows (token, stick-ul din birou, buletin). Apoi validatorul ANAF verifică și PDF-ul semnat. Dacă îl primește și serverul ANAF se vede abia la depunerea în SPV.':
+    'The signature is made with the Windows certificate (token, office stick, eID card). Then the ANAF validator also checks the signed PDF. Whether the ANAF server accepts it shows only when you file it in SPV.',
+  'Declarația (XML sau PDF) *': 'Tax return (XML or PDF) *', 'Alege…': 'Choose…', 'Niciun fișier ales': 'No file chosen', 'Automat': 'Automatic',
+  'Validează': 'Validate', 'Se pregătește…': 'Preparing…', 'Verifică XML-ul atașat cu validatorul ANAF': 'Check the attached XML with the ANAF validator',
+  '✓ Fără erori': '✓ No errors', 'Fără erori': 'No errors', 'atenționare': 'warning', 'atenționări': 'warnings', 'eroare': 'error', 'erori': 'errors',
+  '✗ Nu a putut fi validat': '✗ Could not be validated', 'Eroare': 'Error', 'Atenționare': 'Warning', 'validator ANAF': 'ANAF validator',
+  'adus acum de la ANAF': 'just fetched from ANAF', 'fără internet: nu am verificat dacă e cel mai nou': 'offline: did not check whether it is the newest',
+  'PDF făcut': 'PDF made', 'Verific PDF-ul semnat cu validatorul ANAF…': 'Checking the signed PDF with the ANAF validator…',
+  'PDF-ul e semnat, dar verificarea lui cu validatorul ANAF nu a mers': 'The PDF is signed, but checking it with the ANAF validator did not work',
+  'Verific versiunile publicate de ANAF…': 'Checking the versions published by ANAF…', 'Se aduce programul de validare al ANAF…': 'Fetching the ANAF validation program…',
+  'Se aduce Java (o singură dată, ~50 MB)…': 'Fetching Java (once, ~50 MB)…',
+  'Nu mi-am dat seama ce declarație e. Alege tipul din listă.': 'Could not tell which tax return this is. Pick the type from the list.',
+  'Fișierul nu e un XML întreg: e gol, tăiat sau nu e XML. Exportă-l din nou din programul de contabilitate.': 'The file is not a complete XML: it is empty, cut off or not XML. Export it again from the accounting software.',
+  'XML-ul e făcut pentru altă versiune a formularului decât cea cerută de ANAF pentru perioada din el. Actualizează programul de contabilitate și exportă din nou (sau verifică luna și anul).':
+    'The XML was made for a different version of the form than the one ANAF requires for its period. Update the accounting software and export again (or check the month and year).',
+  'Codul fiscal nu trece verificarea cifrei de control. Verifică CUI-ul scris în declarație.': 'The tax ID fails the check digit test. Check the tax ID written in the return.',
+  'Un cod de TVA al unui partener nu e valid pentru țara lui (nu trece verificarea cifrei de control).': 'A partner VAT number is not valid for its country (it fails the check digit test).',
+  'Un CNP nu trece verificarea cifrei de control.': 'A personal ID number fails the check digit test.', 'Un cont IBAN nu e valid.': 'An IBAN is not valid.',
+  'Fișierul nu respectă structura cerută de ANAF: lipsește un câmp obligatoriu sau are unul în plus.': 'The file does not follow the structure ANAF requires: a mandatory field is missing or there is an extra one.',
+  'PDF-ul nu are un XML atașat: nu e o declarație ANAF completată și validată.': 'The PDF has no attached XML: it is not a completed and validated ANAF return.',
+  'Validatorul ANAF a verificat și PDF-ul semnat: structura, XML-ul atașat și semnătura sunt în regulă.': 'The ANAF validator also checked the signed PDF: the structure, the attached XML and the signature are fine.',
+  'Validatorul ANAF a găsit probleme la PDF-ul semnat.': 'The ANAF validator found problems with the signed PDF.',
+  'Validatorul ANAF de pe calculator nu poate verifica semnăturile făcute cu acest tip de cheie (ECDSA, ca la buletinul electronic). Semnătura e pusă corect, dar nu putem confirma de aici că ANAF o primește.':
+    'The ANAF validator on this computer cannot check signatures made with this kind of key (ECDSA, as on the eID card). The signature is in place, but we cannot confirm from here that ANAF accepts it.',
+  'Nu am putut lua lista validatoarelor de la ANAF (fără internet?). Încearcă din nou.': 'Could not get the list of validators from ANAF (offline?). Try again.',
+  'Java, de care au nevoie validatoarele ANAF, se aduce acum împreună cu Stirling PDF. Încearcă din nou în câteva minute.': 'Java, which the ANAF validators need, is being fetched now together with Stirling PDF. Try again in a few minutes.',
+  'Obligații de plată la bugetul de stat': 'Payment obligations to the state budget', 'Impozit pe profit': 'Corporate income tax',
+  'Contribuții sociale și impozit pe salarii': 'Social contributions and payroll tax', 'Impozit reținut la sursă': 'Withholding tax',
+  'Impozit reținut nerezidenților': 'Tax withheld from non-residents', 'Decont de TVA': 'VAT return', 'Decont special de TVA': 'Special VAT return',
+  'Recapitulativă intracomunitară': 'EC sales list', 'Livrări și achiziții pe teritoriul național': 'Domestic supplies and purchases',
+  'Declarație rectificativă': 'Corrective return', 'Declarația unică': 'Single tax return',
   'Semnează mai multe PDF-uri': 'Sign several PDFs', 'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN.': 'Electronic signature on several PDFs at once, with a single PIN.',
   'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN. Fiecare PDF e semnat în câmpul lui de semnătură gol (declarațiile ANAF, formularele) sau, dacă nu are, invizibil. Lângă fiecare apare <nume>_semnat.pdf.':
     'Electronic signature on several PDFs at once, with a single PIN. Each PDF is signed in its empty signature field (ANAF returns, forms) or, if it has none, invisibly. A <name>_semnat.pdf appears next to each.',
@@ -309,6 +346,12 @@ const EN = {
 
 // Texte cu valori în ele: [tipar, înlocuire]. Tiparele sunt cât mai precise, ca să nu prindă textul scris de om.
 const PATTERNS = [
+  [/^Validez (\S+) cu validatorul ANAF…$/, 'Validating $1 with the ANAF validator…'],
+  [/^Se aduce validatorul (\S+) de la ANAF…$/, 'Fetching the $1 validator from ANAF…'],
+  [/^Se descarcă (?:validatorul (\S+)|programul de validare)… (\d+) din (\d+) MB$/, (m, c, a, b2) => `Downloading ${c ? 'the ' + c + ' validator' : 'the validation program'}… ${a} of ${b2} MB`],
+  [/^Câmpul „(.+)” are o valoare pe care ANAF nu o acceptă\.$/, 'The field “$1” has a value ANAF does not accept.'],
+  [/^ANAF nu are validator pentru „(.+)”\.$/, 'ANAF has no validator for “$1”.'],
+  [/^Nu am putut descărca de la ANAF \((.+)\)\. Verifică internetul și încearcă din nou\.$/, 'Could not download from ANAF ($1). Check the internet connection and try again.'],
   [/^OCR pe (\d+) din (\d+) pagini \((.+)\)\.$/, 'OCR on $1 of $2 pages ($3).'],
   [/^„(.+)”: (\d+) acoperiri$/, '“$1”: $2 redactions'],
   [/^(\d+) înlocuiri pe (\d+) pagini\.$/, '$1 replacements on $2 pages.'],

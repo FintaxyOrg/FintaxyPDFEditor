@@ -28,7 +28,7 @@ Run $py -m PyInstaller --noconfirm --clean --windowed --name 'PDF Sign' `
     --paths (Join-Path $root 'bin') `
     --add-data "$(Join-Path $root 'editor');editor" `
     --hidden-import editor_server --hidden-import fx_sign --hidden-import signature_transparent --hidden-import certsign --hidden-import xfaview `
-    --hidden-import localtools --hidden-import winenv --hidden-import deps --hidden-import acp_chat `
+    --hidden-import localtools --hidden-import winenv --hidden-import deps --hidden-import acp_chat --hidden-import anaf `
     --add-data "$(Join-Path $here 'tessdata');tessdata" `
     --collect-submodules pdf2docx --collect-data docx `
     --collect-data pyhanko --collect-submodules pyhanko.sign --collect-submodules pyhanko_certvalidator `

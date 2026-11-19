@@ -510,3 +510,14 @@ button.primary.big { height: 40px; padding: 0 22px; font-size: 14.5px; border-ra
 .chat-jump { bottom: 118px; }
 .rail [data-panel=chat].on { background: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .shimmer, .ct-a.streaming > :last-child::after { animation-duration: 1ms; } }
+
+/* ---- validare și semnare declarații (validatoarele ANAF) ---- */
+.anaf-title { font-weight: 600; }
+.anaf-meta { display: block; color: var(--muted); margin-top: 2px; }
+.anaf-msg { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(0, 0, 0, .08); font-size: 12.5px; }
+.anaf-msg.warning b { color: #7a5a00; }
+.anaf-hint { margin-top: 3px; color: var(--text, #1c2230); }
+.anaf-raw { display: block; margin-top: 3px; color: var(--muted); font: 11.5px/1.4 Consolas, monospace; word-break: break-word; }
+.anaf-note { margin-top: 12px; }
+.anaf-sign { margin-top: 14px; }
+.anaf-sign .grp { padding-left: 0; }
