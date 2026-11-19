@@ -166,6 +166,7 @@ async function openDoc(path, page) {
   if (page && page > 1) S.pages[page - 1]?.el.scrollIntoView({ block: 'start' })
   updatePg()
   if (S.doc.signed) toast('PDF-ul are semnătură digitală: îl poți citi și comenta, dar orice modificare ar strica semnătura.', { ms: 7000 })
+  else if (S.doc.xfaView) toast(XFA_LOCKED, { ms: 7000 })
 }
 
 let observer
@@ -474,7 +475,7 @@ async function ensureFields(p) {
 }
 function renderField(it) {
   const p = S.pages[it.page - 1]
-  const off = it.readonly || S.doc.signed
+  const off = it.readonly || S.doc.signed || S.doc.xfaView
   const title = it.label || it.name
   let el
   if (it.kind === 'check' || it.kind === 'radio') {
@@ -595,7 +596,10 @@ function readEditBox(it) {
   it.segments.forEach((sg, i) => { sg.text = texts[i] })
   it.text = texts.join('')
 }
+// Formular XFA dinamic (ANAF): paginile vin dintr-un PDF de vizualizare, deci aici e doar-citire.
+const XFA_LOCKED = 'Formularul inteligent (XFA) nu se poate modifica aici: îl citești, îl printezi și îl semnezi electronic.'
 function startEdit(p, r) {
+  if (S.doc.xfaView) return toast(XFA_LOCKED, { err: true })
   if (S.doc.signed) return toast('PDF-ul are semnătură digitală; nu-l modific.', { err: true })
   let it = S.items.find(o => o.type === 'edit' && o.page === p.n && o.ri === r.i)
   if (!it) {
@@ -655,6 +659,7 @@ main.addEventListener('click', e => {
   const pt = ptAt(p, e)
   if (S.tool === 'sig') {
     if (!S.sig) return openFlyout()
+    if (S.doc.xfaView) return toast(XFA_LOCKED, { err: true })
     if (S.doc.signed) return toast('PDF-ul are semnătură digitală; nu-l modific.', { err: true })
     const w = S.sigW
     addItem({ type: 'sig', page: p.n, sig: S.sig, w, x: pt.x - w / 2, y: pt.y - (w * ratio(S.sig)) / 2 })
@@ -662,6 +667,7 @@ main.addEventListener('click', e => {
     ghost.style.display = 'none'
   } else if (S.tool === 'text') {
     if (document.activeElement?.classList.contains('txt')) return document.activeElement.blur()
+    if (S.doc.xfaView) return toast(XFA_LOCKED, { err: true })
     if (S.doc.signed) return toast('PDF-ul are semnătură digitală; nu-l modific.', { err: true })
     addItem({ type: 'text', page: p.n, x: pt.x, y: pt.y - S.fs * 0.6, fs: S.fs, text: '', color: S.color, bold: S.bold, font: 'arial' })
   } else if (S.tool === 'comment') {
@@ -948,6 +954,7 @@ async function save(rotate) {
 // Rotirea se scrie imediat în fișier, împreună cu ce s-a pus deja pe pagini (în pagina de dinainte de rotire).
 function rotate(angle, all) {
   if (!S.doc) return
+  if (S.doc.xfaView) return toast(XFA_LOCKED, { err: true })
   if (S.doc.signed) return toast('PDF-ul are semnătură digitală; rotirea ar strica-o.', { err: true })
   save({ pages: all ? S.pages.map(p => p.n) : [S.cur], angle })
 }
@@ -1444,8 +1451,10 @@ function openCertSign() {
   if (S.doc.signed) form.append(h('div', { class: 'warn' }, 'PDF-ul are deja o semnătură; a ta se adaugă după ea, fără s-o strice.'))
   const thumb = certPicker(form)
   const empty = S.doc.sigfields.filter(f => !f.signed && f.visible)
+  // Formular XFA dinamic: pagina din fișier nu e cea de pe ecran, deci semnătura nu are unde să fie desenată.
+  if (S.doc.xfaView) form.append(h('div', { class: 'warn' }, 'Formular inteligent (XFA): semnătura se adaugă invizibilă și se vede în panoul de semnături.'))
   const opts = [...empty.map(f => [`field:${f.name}`, `În câmpul de semnătură de pe pagina ${f.page}`]),
-    ['box', 'Aleg locul pe pagină (trag un dreptunghi)'], ['none', 'Invizibilă (se vede în panoul de semnături)']]
+    ...(S.doc.xfaView ? [] : [['box', 'Aleg locul pe pagină (trag un dreptunghi)']]), ['none', 'Invizibilă (se vede în panoul de semnături)']]
   const where = h('select', {}, ...opts.map(([v, l]) => h('option', { value: v }, l)))
   const boxInfo = h('small', {})
   form.append(h('label', { class: 'field' }, h('span', {}, 'Unde apare semnătura'), where, boxInfo))
@@ -1560,6 +1569,8 @@ function renderDocBar() {
   if (d.xfa) {
     rows.push(h('div', { class: 'row' }, h('b', {}, 'Formular inteligent (XFA)'),
       h('span', {}, 'ca declarațiile ANAF. Îl poți citi și semna electronic aici; datele se completează în programul ANAF sau în Adobe Reader.')))
+    if (d.xfa && !d.xfaView && d.pages.length === 1) rows.push(h('div', { class: 'row' }, h('b', {}, 'Formularul nu a putut fi desenat'),
+      h('span', {}, 'se vede pagina din fișier. Deschide-l în Adobe Reader sau încearcă din nou.')))
   } else if (d.fields && !d.signed) {
     rows.push(h('div', { class: 'row' }, h('b', {}, `Formular cu ${d.fields} câmpuri`), h('span', {}, 'completează-le direct pe pagină, apoi Salvează.')))
   }
@@ -1695,6 +1706,7 @@ function openUpload() {
 // Salvează scrie o dată copia _editat.pdf, cu Anulează ca la orice salvare.
 function openOrganize() {
   if (!S.doc || $('#organize')) return
+  if (S.doc.xfaView) return toast(XFA_LOCKED, { err: true })
   if (S.doc.signed) return toast('PDF-ul are semnătură digitală; reordonarea paginilor ar strica-o.', { err: true })
   if (changed().length) return toast('Ai modificări nesalvate pe pagini: apasă întâi Salvează, apoi organizează paginile.', { err: true, ms: 7000 })
   closePop()

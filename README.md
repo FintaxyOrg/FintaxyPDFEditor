@@ -5,7 +5,7 @@ Aplicație Windows pentru semnat și editat PDF-uri:
 - **semnătură olografă**: imagine transparentă pusă cu mouse-ul;
 - **semnătură electronică (calificată)** cu certificatul din Windows: buletinul electronic, un token sau stick-ul din birou prin **FintaxySign**; și **mai multe PDF-uri deodată**, cu un singur PIN;
 - **formulare**: completezi câmpurile direct pe pagină;
-- **PDF-uri ANAF** (formulare XFA cu XML atașat): le citești, deschizi XML-ul și le semnezi în câmpul „Semnătura”;
+- **PDF-uri ANAF** (formulare XFA cu XML atașat): le citești, deschizi XML-ul și le semnezi în câmpul „Semnătura”; și formularele „inteligente” nesalvate din Adobe (D300, D394, D101…), care în alte programe arată doar „Please wait…”;
 - **organizarea paginilor**: miniaturi pe care le tragi în altă ordine, le ștergi sau le rotești (tasta **P**);
 - **unelte PDF direct în aplicație**: unire, împărțire, extragere și ștergere de pagini, comprimare, PDF → Word / Excel / imagini / text, imagini → PDF, Word / Excel → PDF (cu Microsoft Office), parolă, watermark, numere de pagină, aplatizare, validarea semnăturii, reparare;
 - **căutare globală Ctrl+K**: orice unealtă sau acțiune, scrisă cu sau fără diacritice;
@@ -56,6 +56,7 @@ Un PDF deja semnat (de exemplu o declarație semnată de alt administrator) prim
 
 - **Formular cu câmpuri**: câmpurile apar evidențiate pe pagină; le completezi și apeși **Salvează** (`<nume>_editat.pdf`).
 - **Declarații ANAF** (D100, D112, D300 etc., formulare XFA): se văd ca în Adobe; deasupra apare XML-ul atașat, cu **Deschide** și **Arată în folder** (se salvează în `<nume> - atasamente`). Datele se completează în programul ANAF (Soft J / DUKIntegrator) sau în Adobe Reader; aici le citești și le semnezi.
+- **Formulare „inteligente” dinamice** (cele care în alte programe arată doar „Please wait…”): fișierul conține doar acea pagină, iar formularul adevărat e desenat de aplicație (pdf.js + Edge, câteva secunde la prima deschidere). Le citești, le printezi și le semnezi electronic; semnătura se adaugă invizibilă, pe fișierul original. Nu se pot edita aici.
 
 ### Unelte PDF
 
@@ -103,7 +104,7 @@ Făcut după „Ask AI” din Fintaxy CRM, prin ACP (Agent Client Protocol), pe 
 
 | Folder | Ce e |
 |---|---|
-| `bin/` | aplicația, în Python: `desktop.py` (pornirea, ferestrele, AI), `editor_server.py` (serverul local al editorului, Stirling), `fx_sign.py` (scrierea în PDF cu PyMuPDF, formulare), `certsign.py` (semnătura electronică: pyHanko + cheia din Windows prin PowerShell), `winenv.py` (ce află de la Windows: fereastra de PIN, cititoare, FintaxySign, unde stă cheia fiecărui certificat), `localtools.py` (uneltele PDF fără Stirling, OCR, redactare), `deps.py` (programele în plus și instalarea lor), `acp_chat.py` (chatul cu Claude prin ACP), `signature_transparent.py` (fundal transparent la semnături) |
+| `bin/` | aplicația, în Python: `desktop.py` (pornirea, ferestrele, AI), `editor_server.py` (serverul local al editorului, Stirling), `fx_sign.py` (scrierea în PDF cu PyMuPDF, formulare), `certsign.py` (semnătura electronică: pyHanko + cheia din Windows prin PowerShell), `winenv.py` (ce află de la Windows: fereastra de PIN, cititoare, FintaxySign, unde stă cheia fiecărui certificat), `localtools.py` (uneltele PDF fără Stirling, OCR, redactare), `xfaview.py` (formularele XFA dinamice: PDF de vizualizare făcut cu pdf.js din `editor/xfa` și tipărit cu Edge), `deps.py` (programele în plus și instalarea lor), `acp_chat.py` (chatul cu Claude prin ACP), `signature_transparent.py` (fundal transparent la semnături) |
 | `editor/` | interfața (HTML, CSS, JS), servită de `editor_server.py` pe 127.0.0.1 cu token; `assist.js` = chatul, programele în plus, ghidul de pornire |
 | `app/` | `build.ps1` (versiunea portabilă + `PDF-Sign-Setup.exe`), `Setup.cs` (fișierul unic de instalare), `install.ps1` + `Instalare.cmd` / `Dezinstalare.cmd`, iconița, `tessdata/` (limbile OCR) |
 | `tests/` | testele aplicației (vezi mai jos) |
@@ -131,6 +132,7 @@ Toate rulează cu Python-ul din `.venv-build`, pe documente făcute pe loc, înt
 ```powershell
 .venv-build\Scripts\python.exe tests\test_sign.py                 # semnătura electronică cap-coadă (RSA și P-384, din .pfx de test)
 .venv-build\Scripts\python.exe tests\test_chat.py                 # chatul prin ACP, cu un agent simulat
+.venv-build\Scripts\python.exe tests\test_xfa.py                  # formularele XFA dinamice (ANAF): desenare, editor, semnare
 .venv-build\Scripts\python.exe tests\dev_server.py C:\tmp\t 8765   # serverul de test (lasă-l pornit), apoi:
 .venv-build\Scripts\python.exe tests\test_tools.py C:\tmp\t 8765   # editorul + toate uneltele locale + toate uneltele Stirling
 .venv-build\Scripts\python.exe tests\test_chat_live.py            # chatul pe viu (folosește abonamentul Claude al calculatorului)
@@ -188,5 +190,6 @@ Licența e AGPL fiindcă aplicația scrie în PDF cu PyMuPDF (MuPDF), care e AGP
 | PyInstaller (programul de pornire din kit) | GPL-2.0 cu excepție pentru aplicațiile împachetate |
 | Tesseract tessdata (`ron`, `eng`) | Apache-2.0 |
 | iconițe Fluent UI | MIT |
+| pdf.js (`editor/xfa`, desenarea formularelor XFA) | Apache-2.0 |
 
 LibreOffice, Stirling PDF, Node.js și adaptorul Claude nu sunt în kit: aplicația le descarcă de la sursa lor oficială, fiecare sub licența ei.

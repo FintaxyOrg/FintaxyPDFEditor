@@ -68,13 +68,41 @@ def open_doc(path: str) -> fitz.Document:
     return doc
 
 
+def view_doc(path: str) -> fitz.Document:
+    """Documentul din care se desenează paginile. La formularele XFA dinamice (ANAF), pagina din fișier e doar mesajul
+    „Please wait…”: arătăm PDF-ul de vizualizare făcut de xfaview. Fișierul original rămâne cel care se semnează."""
+    pv = xfa_preview(path)
+    return open_doc(str(pv)) if pv else open_doc(path)
+
+
+def xfa_preview(path: str):
+    """Calea PDF-ului de vizualizare, dacă fișierul e un formular XFA dinamic; altfel None."""
+    try:
+        import xfaview
+        if xfaview.needs(open_doc(path)):
+            return xfaview.preview(path)
+    except Exception:  # fără Edge sau fără pdf.js: rămâne pagina din fișier, ca înainte
+        traceback.print_exc()
+    return None
+
+
+def is_xfa_view(path: str) -> bool:
+    return xfa_preview(path) is not None
+
+
+XFA_LOCKED = "Formularul inteligent (XFA) nu se poate modifica aici: îl citești, îl printezi și îl semnezi electronic."
+
+
 def doc_info(path: str) -> dict:
     with LOCK:
         doc = open_doc(path)
+        view = view_doc(path)
         xfa = fx_sign.is_xfa(doc)
         return {
             "path": str(Path(path)), "name": Path(path).name, "dir": str(Path(path).parent),
-            "pages": [{"w": p.rect.width, "h": p.rect.height, "rot": p.rotation} for p in doc],
+            "pages": [{"w": p.rect.width, "h": p.rect.height, "rot": p.rotation} for p in view],
+            # Formular XFA dinamic: paginile vin din PDF-ul de vizualizare, deci documentul e doar-citire aici.
+            "xfaView": view is not doc,
             "signed": fx_sign.is_signed(doc),
             "sigfields": fx_sign.signature_fields(doc),
             # Formularele XFA (ANAF) se completează în programul lor: Adobe citește datele din XFA, nu din câmpuri.
@@ -124,7 +152,7 @@ def save_attachment(path: str, key: str) -> str:
 
 def page_png(path: str, n: int, width: int) -> bytes:
     with LOCK:
-        page = open_doc(path)[n - 1]
+        page = view_doc(path)[n - 1]
         z = max(200, min(width, 3000)) / page.rect.width
         return page.get_pixmap(matrix=fitz.Matrix(z, z), alpha=False).tobytes("png")
 
@@ -149,6 +177,8 @@ PRINTS: dict = {}
 
 def print_prepare(path: str, items: list) -> dict:
     with LOCK:
+        if is_xfa_view(path):  # formular XFA dinamic: se tipărește ce se vede, adică PDF-ul de vizualizare
+            path, items = str(xfa_preview(path)), []
         doc = fitz.open(stream=Path(path).read_bytes(), filetype="pdf")
         if items and not fx_sign.is_signed(doc):
             fx_sign.apply_items(doc, items, sig_indexes(items))
@@ -178,7 +208,7 @@ def page_runs(path: str, n: int) -> list:
     """Rândurile de text de pe pagină pentru „Editează text”. Un rând se editează întreg, ca bucățile lui să se poată
     lungi fără să intre una peste alta; fiecare bucată (segment) își păstrează stilul și fontul."""
     with LOCK:
-        doc = open_doc(path)
+        doc = view_doc(path)
         page = doc[n - 1]
         rot = page.rotation_matrix
         embedded = fx_sign.embedded_fonts(page)
@@ -224,7 +254,7 @@ def font_bytes(path: str, ref: str):
     """Fontul unui segment pentru browser (ca textul din caseta de editare să arate ca în PDF)."""
     if ref.startswith("x:"):
         with LOCK:
-            name, ext, _type, buf = open_doc(path).extract_font(int(ref[2:]))
+            name, ext, _type, buf = view_doc(path).extract_font(int(ref[2:]))
         return (buf, f"font/{ext}") if buf and ext in ("ttf", "otf") else (None, "")
     if ref in fx_sign.font_index().values() and Path(ref).suffix.lower() in (".ttf", ".otf"):
         return Path(ref).read_bytes(), f"font/{Path(ref).suffix.lower()[1:]}"
@@ -234,7 +264,7 @@ def font_bytes(path: str, ref: str):
 def near_text(path: str, n: int, x: float, y: float) -> str:
     """Textul de lângă un punct (pt, pagina cum se vede): rândul cel mai apropiat."""
     with LOCK:
-        page = open_doc(path)[n - 1]
+        page = view_doc(path)[n - 1]
         rot = page.rotation_matrix
         best, dist = "", 1e9
         for b in page.get_text("dict", flags=fitz.TEXTFLAGS_TEXT)["blocks"]:
@@ -253,14 +283,14 @@ def near_text(path: str, n: int, x: float, y: float) -> str:
 
 def region_text(path: str, n: int, rect: list) -> str:
     with LOCK:
-        page = open_doc(path)[n - 1]
+        page = view_doc(path)[n - 1]
         r = fitz.Rect(rect) * page.derotation_matrix
         return re.sub(r"\s+", " ", page.get_textbox(r)).strip()[:600]
 
 
 def capture(path: str, n: int, rect: list) -> str:
     with LOCK:
-        page = open_doc(path)[n - 1]
+        page = view_doc(path)[n - 1]
         r = (fitz.Rect(rect) * page.derotation_matrix) & page.cropbox
         folder = STATE / "captures"
         folder.mkdir(parents=True, exist_ok=True)
@@ -895,7 +925,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.json(page_runs(q["path"], int(q["n"])))
             if path == "/api/fields":
                 with LOCK:
-                    return self.json(fx_sign.form_fields(open_doc(q["path"])[int(q["n"]) - 1]))
+                    return self.json([] if is_xfa_view(q["path"]) else fx_sign.form_fields(open_doc(q["path"])[int(q["n"]) - 1]))
             if path == "/api/certs":
                 import certsign
                 return self.json(certsign.list_certs(fresh=bool(q.get("fresh"))))
@@ -984,8 +1014,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 with LOCK:
                     src = Path(b["path"])
                     items = b.get("items") or []
-                    lib = sig_indexes(items)
                     rot = b.get("rotate")  # {pages, angle}: se aplică după elemente
+                    if is_xfa_view(str(src)):
+                        return self.json({"ok": False, "error": XFA_LOCKED}, 400)
+                    lib = sig_indexes(items)
                     target = stamp(src, items, lib, rotate=rot)
                     _docs.pop(str(target).lower(), None)
                 sigs = list(dict.fromkeys(label_of(library(LIB)[int(it["sig"])]) for it in items if it.get("type") == "sig"))

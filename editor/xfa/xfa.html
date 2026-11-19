@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Formular XFA</title>
+<link rel="stylesheet" href="pdf_viewer.css">
+<style>
+  /* Formularele XFA dinamice (ANAF): pdf.js le desenează ca HTML, iar Edge le tipărește în PDF, o pagină pe foaie. */
+  html, body { margin: 0; padding: 0; background: #fff; }
+  .xfaPrintedPage { position: relative; overflow: hidden; margin: 0; break-after: page; page-break-after: always; }
+  .xfaPrintedPage:last-child { break-after: auto; page-break-after: auto; }
+  .xfaPrintedPage > .xfaLayer { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  button, input, select, textarea { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+</style>
+<style id="pageSize"></style>
+</head>
+<body>
+<div id="pages"></div>
+<img src="hold.gif" alt="" width="1" height="1" style="position:absolute;left:-10px;top:-10px">
+<script type="module">
+import * as pdfjsLib from './pdf.min.mjs'
+pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs'
+const host = document.getElementById('pages')
+try {
+  const doc = await pdfjsLib.getDocument({ url: 'doc.pdf', enableXfa: true }).promise
+  if (!(await doc.allXfaHtml)) throw new Error('fără XFA')
+  const scale = 96 / 72 // un punct PDF = 1/72 in; un pixel CSS la tipar = 1/96 in
+  for (let n = 1; n <= doc.numPages; n++) {
+    const page = await doc.getPage(n)
+    const viewport = page.getViewport({ scale })
+    if (n === 1) document.getElementById('pageSize').textContent = `@page { size: ${viewport.width / scale}pt ${viewport.height / scale}pt; margin: 0 }`
+    // XfaLayer.render își pune clasele și scalarea pe elementul primit: foaia de tipar e un înveliș în jurul lui
+    const sheet = document.createElement('div')
+    sheet.className = 'xfaPrintedPage'
+    sheet.style.width = viewport.width + 'px'
+    sheet.style.height = viewport.height + 'px'
+    const div = document.createElement('div')
+    sheet.append(div)
+    host.append(sheet)
+    const xfaHtml = await page.getXfa()
+    if (xfaHtml) {
+      pdfjsLib.XfaLayer.render({ viewport: viewport.clone({ dontFlip: true }), div, xfaHtml, intent: 'print',
+        annotationStorage: doc.annotationStorage, linkService: { addLinkAttributes() {} } })
+    }
+  }
+  // Fonturile din formular, încărcate explicit: document.fonts.ready ar aștepta „load”, pe care îl ținem noi pe loc.
+  await Promise.all([...document.fonts].map(f => f.load().catch(() => {})))
+  document.title = `xfa-ok ${doc.numPages}`
+} catch (e) {
+  document.title = 'xfa-error'
+  host.textContent = 'XFA-ERROR ' + e
+}
+// Abia acum serverul dă drumul imaginii „hold.gif”, pagina ajunge la „load” și Edge o tipărește.
+new Image().src = 'done'
+</script>
+</body>
+</html>
