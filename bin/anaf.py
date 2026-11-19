@@ -35,6 +35,9 @@ HOME = deps.COMP / "anaf"
 VERSIONS_URL = os.environ.get("FX_ANAF_URL") or "https://static.anaf.ro/static/10/Anaf/update5/versiuni.xml"
 HOSTS = {"static.anaf.ro", urlparse(VERSIONS_URL).hostname}
 CHECK_EVERY = 24 * 3600
+SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,80}")  # nume de fișier din lista ANAF
+SAFE_CODE = re.compile(r"[A-Za-z][A-Za-z0-9_]{1,15}")  # cod de declarație: D300, D112, A4200…
+RETRY_WAIT = (1, 3)  # secunde între încercările unei descărcări (trei încercări în total)
 
 # Numele celor mai folosite declarații; restul apar doar cu codul.
 NAMES = {
@@ -98,6 +101,8 @@ def parse_versions(text: str) -> dict:
             name = u.rsplit("/", 1)[-1]
             if where == "" and not name.lower().endswith(".jar"):
                 continue  # ajutor.chm: doar pentru interfața lor
+            if not SAFE_NAME.fullmatch(name):  # numele ajunge nume de fișier în folderul aplicației
+                raise AnafError(f"Nume de fișier neașteptat în lista ANAF: {name[:60]}")
             base.append([_url(u), f"{where}/{name}" if where else name])
     decl = {}
     for code, j, p, jurl, purl in re.findall(
@@ -124,6 +129,8 @@ def versions(force: bool = False) -> dict:
     try:
         r = requests.get(VERSIONS_URL, timeout=(15, 40))
         r.raise_for_status()
+        if urlparse(r.url).hostname not in HOSTS:
+            raise AnafError("Lista de versiuni a fost trimisă în afara site-ului ANAF.")
         v = parse_versions(r.content.decode("utf-8", "replace"))
     except Exception as err:
         if cache.is_file():  # fără internet: mergem cu ce avem
@@ -143,6 +150,18 @@ def versions(force: bool = False) -> dict:
 
 
 def _fetch(url: str, target: Path, label: str):
+    """Descarcă un fișier de la ANAF. O întrerupere de moment nu oprește validarea: încearcă de trei ori."""
+    for n, wait in enumerate((*RETRY_WAIT, None)):
+        try:
+            return _fetch_once(url, target, label)
+        except AnafError:
+            if wait is None:
+                raise
+            _say(f"Descărcarea s-a întrerupt ({label}); încerc din nou ({n + 2} din {len(RETRY_WAIT) + 1})…")
+            time.sleep(wait)
+
+
+def _fetch_once(url: str, target: Path, label: str):
     import requests
     target.parent.mkdir(parents=True, exist_ok=True)
     part = target.with_name(target.name + ".part")
@@ -150,6 +169,8 @@ def _fetch(url: str, target: Path, label: str):
         # fără comprimare pe drum: mărimea primită trebuie să fie cea anunțată
         with requests.get(url, stream=True, timeout=(20, 60), headers={"Accept-Encoding": "identity"}) as r:
             r.raise_for_status()
+            if urlparse(r.url).hostname not in HOSTS:  # o redirecționare ne-a scos de pe site-ul ANAF
+                raise AnafError(f"Descărcarea a fost trimisă în afara site-ului ANAF ({label}).")
             total = int(r.headers.get("Content-Length") or 0)
             done = 0
             with open(part, "wb") as f:
@@ -175,8 +196,8 @@ def _fetch(url: str, target: Path, label: str):
 def ensure(code: str, v: dict | None = None) -> list:
     """Aduce sau actualizează programul de bază și validatorul unei declarații. Întoarce ce s-a schimbat, pe scurt."""
     v = v or versions()
-    if code not in v["decl"]:
-        raise AnafError(f"ANAF nu are validator pentru „{code}”.")
+    if code not in v["decl"] or not SAFE_CODE.fullmatch(code):
+        raise AnafError(f"ANAF nu are validator pentru „{code[:20]}”.")
     st = _state()
     changed = []
     base_ok = st.get("integrator") == v["integrator"] and st.get("base") == v["base"] and all((HOME / rel).is_file() for _u, rel in v["base"])
@@ -468,6 +489,8 @@ def verify_signed(path: str, decl: str) -> dict:
     src = Path(path)
     if not src.is_file():
         raise AnafError("Fișierul nu mai există.")
+    if not SAFE_CODE.fullmatch(decl or "") or not (HOME / "lib" / f"{decl}Validator.jar").is_file():
+        raise AnafError("Tipul declarației nu e unul validat mai devreme.")
     with _LOCK:
         JOB.update(state="running", line="Verific PDF-ul semnat cu validatorul ANAF…")
         work = _workdir()

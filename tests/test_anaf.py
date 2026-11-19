@@ -27,7 +27,8 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parent.parent
-FOLDER = Path(sys.argv[1]).resolve()
+_args = [a for a in sys.argv[1:] if not a.startswith("--")]
+FOLDER = Path(_args[0]).resolve() if _args else Path(__import__("tempfile").mkdtemp(prefix="pdfsign-anaf-"))
 LIVE = "--live" in sys.argv
 CLEAN = "--clean" in sys.argv
 FAILED = []
@@ -92,10 +93,65 @@ class Site(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         HITS.append(self.path)
+        name = self.path.rsplit("/", 1)[-1]
+        if FLAKY.get(name):  # o întrerupere de moment a site-ului
+            FLAKY[name] -= 1
+            return self.send_error(503)
         super().do_GET()
 
     def log_message(self, *a):
         pass
+
+
+FLAKY = {}  # nume de fișier -> de câte ori mai răspunde site-ul simulat cu eroare
+
+
+def hardening():
+    """Observațiile din verificarea codului: reluarea descărcării și intrările neașteptate."""
+    import anaf
+    print("== descărcări întrerupte și intrări neașteptate ==")
+    anaf.RETRY_WAIT = (0.1, 0.1)
+    site = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Site)  # cel de la început a fost oprit la „fără internet”
+    threading.Thread(target=site.serve_forever, daemon=True).start()
+    publish(PORT, {"D300": ("J1.0.0", "P1.0.0", 1), "D112": ("J1.0.0", "P1.0.0", 1), "D390": ("J9.9.9", "P1.0.0", 9)})
+    v = anaf.versions(force=True)
+    FLAKY["D390Validator.jar"] = 1
+    HITS.clear()
+    try:
+        changed = anaf.ensure("D390", v)
+    except anaf.AnafError as err:
+        changed = str(err)
+    hits = sum(h.endswith("D390Validator.jar") for h in HITS)
+    check("o descărcare întreruptă o dată e reluată singură", isinstance(changed, list) and changed and hits == 2, (changed, hits))
+    publish(PORT, {"D300": ("J1.0.0", "P1.0.0", 1), "D112": ("J1.0.0", "P1.0.0", 1), "D390": ("J9.9.10", "P1.0.0", 10)})
+    v = anaf.versions(force=True)
+    FLAKY["D390Validator.jar"] = 9
+    try:
+        anaf.ensure("D390", v)
+        gave_up = False
+    except anaf.AnafError:
+        gave_up = True
+    FLAKY.clear()
+    check("după trei încercări nereușite se oprește, cu mesaj", gave_up)
+    check("validatorul vechi rămâne pe loc când cel nou nu vine", (anaf.HOME / "lib" / "D390Validator.jar").is_file())
+    text = (SITE / "update5" / "versiuni.xml").read_text(encoding="utf-8")
+    bad = text.replace("DUKIntegrator.jar", "..%5C..%5Crau.jar", 1) if "DUKIntegrator.jar" in text else ""
+    try:
+        anaf.parse_versions(bad)
+        refused = not bad
+    except anaf.AnafError:
+        refused = True
+    check("un nume de fișier neașteptat în lista ANAF e refuzat", bool(bad) and refused, bad[:80])
+    doc = FOLDER / "declaratii" / "oarecare.pdf"
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_bytes(b"%PDF-1.4")
+    for code in ("../../x", "D300 -jar alt.jar", "Z999"):
+        try:
+            anaf.verify_signed(str(doc), code)
+            ok = False
+        except anaf.AnafError:
+            ok = True
+        check(f"verificarea PDF-ului semnat refuză tipul „{code}”", ok)
 
 
 def xml_decl(code: str, cui: str = "12345678", extra: str = "", ns: str = "") -> bytes:
@@ -425,5 +481,6 @@ if __name__ == "__main__":
         (FOLDER / "state").mkdir(parents=True, exist_ok=True)
         offline()
         server_routes()
+        hardening()
     print("\n" + ("VALIDARE ȘI SEMNARE DECLARAȚII: TOATE TESTELE AU TRECUT" if not FAILED else f"{len(FAILED)} TESTE PICATE: {FAILED}"))
     sys.exit(1 if FAILED else 0)
