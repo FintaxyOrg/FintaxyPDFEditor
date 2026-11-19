@@ -45,6 +45,12 @@ COMPONENTS = {
         "name": "Stirling PDF", "use": "Unelte rare: conversii exotice, verificări, broșuri", "kind": "msi",
         "url": "https://github.com/Stirling-Tools/Stirling-PDF/releases/download/v3.0.2/Stirling-PDF-windows-x86_64.msi",
     },
+    # Doar la cerere (nu e în ORDER): validatoarele ANAF folosesc Java din Stirling PDF; ăsta e de rezervă, când Stirling lipsește.
+    "java": {
+        "name": "Java", "use": "Validatoarele ANAF (când lipsește Stirling PDF)", "kind": "zip",
+        "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.5%2B11/OpenJDK21U-jre_x64_windows_hotspot_21.0.5_11.zip",
+        "size": 49281474, "sha256": "1749b36cfac273cee11802bf3e90caada5062de6a3fef1a3814c0568b25fd654",
+    },
 }
 ORDER = ("libreoffice", "node", "claude", "stirling")
 
@@ -94,6 +100,23 @@ def node() -> str:
     return str(hit) if hit else ""
 
 
+def java() -> str:
+    """Java pentru validatoarele ANAF: cel din Stirling PDF (instalat sau adus de aplicație), altfel cel adus de
+    rezervă, altfel cel de pe calculator."""
+    inst = stirling_dir()
+    if inst:
+        return str(Path(inst) / "runtime" / "jre" / "bin" / "java.exe")
+    hit = _first(COMP / "java", "*/bin/java.exe") or _first(COMP / "java", "bin/java.exe")
+    if hit:
+        return str(hit)
+    if not CLEAN:
+        home = os.environ.get("JAVA_HOME")
+        if home and (Path(home) / "bin" / "java.exe").is_file():
+            return str(Path(home) / "bin" / "java.exe")
+        return shutil.which("java") or ""
+    return ""
+
+
 def claude_link() -> bool:
     import acp_chat
     return bool(acp_chat.adapter_script())
@@ -110,7 +133,7 @@ def ms_office() -> bool:
 
 
 PRESENT = {"libreoffice": lambda: bool(soffice()), "stirling": lambda: bool(stirling_dir()), "node": lambda: bool(node()),
-           "claude": claude_link}
+           "claude": claude_link, "java": lambda: bool(java())}
 
 
 def enabled() -> bool:
@@ -281,7 +304,7 @@ def provision(cid: str) -> dict:
         return JOBS[cid]
     JOBS[cid] = {"state": "running", "line": "Se pregătește…", "pct": None, "t": time.time()}
     try:
-        need = {"libreoffice": 1500, "stirling": 1300, "node": 250, "claude": 600}[cid]
+        need = {"libreoffice": 1500, "stirling": 1300, "node": 250, "claude": 600, "java": 250}[cid]
         COMP.mkdir(parents=True, exist_ok=True)
         if shutil.disk_usage(COMP).free < need * 1048576:
             raise RuntimeError(f"Nu e destul loc pe disc (trebuie ~{need} MB liberi).")

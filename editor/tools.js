@@ -35,6 +35,7 @@ export const TOOLS = [
   { id: 'signature', group: 'sign', label: 'Semnătură olografă', native: 'sig', desc: 'Pune o semnătură din biblioteca ta pe pagină.' },
   { id: 'certsign', group: 'sign', label: 'Semnătură electronică (certificat)', endpoint: A + 'security/cert-sign', suffix: 'semnat', custom: 'certsign', desc: 'Semnătură digitală calificată cu certificatul din Windows: buletinul electronic, un token sau stick-ul din birou (FintaxySign).' },
   { id: 'bulksign', group: 'sign', label: 'Semnează mai multe PDF-uri', custom: 'bulksign', desc: 'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN.' },
+  { id: 'anaf', group: 'sign', label: 'Validare și semnare declarații', custom: 'anaf', noDoc: true, desc: 'Verifică XML-ul unei declarații cu validatorul ANAF, face PDF-ul și îl semnează.' },
   { id: 'timestamp', group: 'sign', label: 'Marcă temporală', endpoint: A + 'security/timestamp-pdf', suffix: 'timestamp', desc: 'Adaugă o marcă temporală RFC 3161.' },
   { id: 'removesign', group: 'sign', label: 'Elimină semnătura digitală', endpoint: A + 'security/remove-cert-sign', suffix: 'fara-semnatura' },
   { id: 'validatesign', group: 'sign', label: 'Validează semnătura digitală', endpoint: A + 'security/validate-signature', local: 'validatesign', desc: 'Cine a semnat, când, și dacă fișierul e intact.' },

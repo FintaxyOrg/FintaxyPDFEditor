@@ -968,6 +968,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if path == "/api/deps":
                 import deps
                 return self.json(deps.status())
+            if path == "/api/anaf/status":
+                import anaf
+                return self.json(anaf.status())
             if path == "/api/chat/status":
                 import acp_chat
                 import desktop
@@ -1119,6 +1122,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         print(time.strftime("%Y-%m-%d %H:%M:%S ") + f"certsign: {Path(r.get('path') or '').name}: {r.get('error')}",
                               file=sys.stderr)
                 return self.json({"ok": True, "results": results})
+            if path in ("/api/anaf/run", "/api/anaf/verify"):
+                # Validare și semnare declarații: validatoarele ANAF (bin/anaf.py). Nu ține editorul pe loc.
+                import anaf
+                try:
+                    if path == "/api/anaf/verify":
+                        return self.json(anaf.verify_signed(b["path"], b["decl"]))
+                    res = anaf.process(b["path"], b.get("decl") or "", make_pdf=b.get("pdf", True), option=int(b.get("option") or 0))
+                except anaf.AnafError as err:
+                    return self.json({"ok": False, "error": str(err)}, 400)
+                if res.get("pdf"):
+                    event("tool", source=b["path"], out=res["pdf"], tool="Validare și semnare declarații", kind="pdf")
+                return self.json(res)
             if path == "/api/certsign/cancel":
                 import certsign
                 return self.json({"ok": True, "cancelled": certsign.cancel()})

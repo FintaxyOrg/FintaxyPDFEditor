@@ -80,6 +80,7 @@ PICK_KINDS = {  # ce se poate alege la „Adaugă fișiere”: semnarea în bloc
     "office": (("Word, Excel, PowerPoint", "Word, Excel, PowerPoint"), "*.doc *.docx *.rtf *.odt *.txt *.xls *.xlsx *.csv *.ods *.ppt *.pptx *.odp"),
     "any": (("Documente", "Documents"), "*.doc *.docx *.rtf *.odt *.txt *.xls *.xlsx *.csv *.ods *.ppt *.pptx *.odp *.odg *.vsd *.vsdx *.pub *.wpd *.html *.htm *.xml *.svg *.png *.jpg *.jpeg *.bmp *.tif *.tiff"),
     "web": (("HTML, Markdown", "HTML, Markdown"), "*.html *.htm *.md *.markdown *.txt"),
+    "anaf": (("Declarații (XML sau PDF)", "Tax returns (XML or PDF)"), "*.xml *.pdf"),
 }
 
 
