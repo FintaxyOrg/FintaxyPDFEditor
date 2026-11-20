@@ -131,6 +131,14 @@ body:not([data-tool=edit]) .run { display: none; }
 .sigopt span { font-size: 12.5px; color: var(--ink); }
 
 /* sertarul din dreapta: unelte, comentarii */
+/* body.side (editor.js, syncSide) = panoul e deschis; pe ferestre destul de late documentul îi face loc */
+@media (min-width: 860px) {
+  body.side { --side: 400px; }
+  body.side main { right: var(--side); }
+  body.side .drawer { box-shadow: none; }
+  body.side .ctxbar, body.side .hint { left: calc(var(--rail) + (100vw - var(--rail) - var(--side)) / 2); }
+  body.side .hint { max-width: calc(100vw - var(--rail) - var(--side) - 24px); }
+}
 .drawer { position: fixed; z-index: 45; top: var(--top); right: 0; bottom: 0; width: min(400px, 92vw); background: #fff;
   border-left: 1px solid var(--line); box-shadow: -10px 0 30px rgba(18, 28, 56, .12); display: flex; flex-direction: column; }
 .drawer .dh { display: flex; align-items: center; gap: 6px; padding: 10px 10px 8px 14px; border-bottom: 1px solid var(--line); }
@@ -332,7 +340,11 @@ body[data-tool=sigbox] .page { cursor: crosshair; }
 
 /* ---- semnul de informație: textul lung stă în el, nu sub titlu ---- */
 .infomark { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 6px; border-radius: 50%;
-  border: 1px solid #b9c0cf; color: #6a7284; font: italic 600 11px/1 Georgia, serif; cursor: help; position: relative; vertical-align: 1px; flex: none; }
+  border: 1px solid #b9c0cf; color: #6a7284; font-size: 0; cursor: help; position: relative; vertical-align: -1px; flex: none; box-sizing: border-box; }
+/* litera din element rămâne pentru cititoarele de ecran; pe ecran „i”-ul e un desen simetric, deci stă exact pe mijloc */
+.infomark::before { content: ""; width: 14px; height: 14px; flex: none; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Ccircle cx='7' cy='4' r='1'/%3E%3Crect x='6.25' y='6' width='1.5' height='4.5' rx='.75'/%3E%3C/svg%3E") center / 14px 14px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Ccircle cx='7' cy='4' r='1'/%3E%3Crect x='6.25' y='6' width='1.5' height='4.5' rx='.75'/%3E%3C/svg%3E") center / 14px 14px no-repeat; }
 .infomark:hover, .infomark:focus { border-color: var(--accent); color: var(--accent); outline: none; }
 .infomark:hover::after, .infomark:focus::after { content: attr(data-tip); position: absolute; z-index: 90; top: 22px; left: 50%; transform: translateX(-50%);
   width: max-content; max-width: 260px; padding: 8px 10px; border-radius: 9px; background: #1c2230; color: #fff; font: 400 12.5px/1.4 "Segoe UI", system-ui, sans-serif;

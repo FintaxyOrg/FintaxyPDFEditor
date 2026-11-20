@@ -2128,7 +2128,14 @@ main.addEventListener('wheel', e => {
   else stepZoom(e.deltaY < 0 ? 1 : -1)
 }, { passive: false })
 main.addEventListener('scroll', () => { updatePg(); positionPop() }, { passive: true })
-addEventListener('resize', layout)
+// Panoul din dreapta stă lângă document, nu peste el: zona paginilor se îngustează și paginile se reașază.
+// Pe ferestre înguste nu e loc pentru amândouă, deci acolo panoul rămâne deasupra (pragul e în editor.css).
+function syncSide() {
+  document.body.classList.toggle('side', !$('#drawer').hidden)
+  layout()
+}
+new MutationObserver(syncSide).observe($('#drawer'), { attributes: true, attributeFilter: ['hidden'] })
+addEventListener('resize', syncSide)
 addEventListener('beforeunload', e => { if (changed().length) { e.preventDefault(); e.returnValue = '' } })
 
 const RAIL_ICONS = { select: 'pointer', sig: 'sig', text: 'type', edit: 'edit', comment: 'comment', region: 'region' }
