@@ -5,8 +5,10 @@
 într-un PDF de vizualizare ținut în STATE/xfa. Editorul arată paginile din acest PDF; fișierul original rămâne
 neatins și el e cel care se semnează.
 """
+import functools
 import hashlib
 import http.server
+import json
 import os
 import secrets
 import subprocess
@@ -23,9 +25,35 @@ CACHE = fx_sign.STATE / "xfa"
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 PLACEHOLDER = ("please wait", "proper contents of the document")
 TYPES = {".html": "text/html; charset=utf-8", ".mjs": "text/javascript", ".js": "text/javascript", ".css": "text/css",
-         ".pdf": "application/pdf"}
+         ".pdf": "application/pdf", ".json": "application/json", ".otf": "font/otf", ".ttf": "font/ttf"}
 _lock = threading.Lock()
 _failed: dict = {}
+
+# Fonturile Adobe ale formularelor ANAF (Myriad Pro, Minion Pro) nu sunt în Windows, dar vin cu Acrobat / Adobe Reader.
+# Dacă sunt pe calculator, formularul se desenează cu ele (ca în Adobe); altfel pdf.js pune un font asemănător.
+ADOBE_FONT_DIRS = [Path(os.environ.get(v, d)) / sub for v, d in (("ProgramFiles", r"C:\Program Files"),
+                                                                   ("ProgramFiles(x86)", r"C:\Program Files (x86)"))
+                   for sub in (r"Adobe\Acrobat DC\Resource\Font", r"Adobe\Acrobat Reader DC\Resource\Font",
+                               r"Adobe\Acrobat Reader\Resource\Font")]
+ADOBE_FONT_DIRS += [Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts",
+                    Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Windows" / "Fonts"]
+FONT_FILES = {  # fișier -> (familie, grosime, stil)
+    f"{fam.replace(' ', '')}-{name}.otf": (fam, weight, style)
+    for fam in ("Myriad Pro", "Minion Pro")
+    for name, weight, style in (("Regular", "normal", "normal"), ("Bold", "bold", "normal"), ("It", "normal", "italic"),
+                                ("BoldIt", "bold", "italic"))
+}
+
+
+@functools.lru_cache(maxsize=1)
+def adobe_fonts() -> dict:
+    """Fonturile Adobe găsite pe calculator: nume fișier -> cale (căutate o dată; editorul întreabă la fiecare pagină)."""
+    found = {}
+    for d in ADOBE_FONT_DIRS:
+        for name in FONT_FILES:
+            if name not in found and (d / name).is_file():
+                found[name] = d / name
+    return found
 
 
 def placeholder(doc) -> bool:
@@ -44,9 +72,14 @@ def needs(doc) -> bool:
     return doc.xref_get_key(doc.pdf_catalog(), "NeedsRendering")[1] == "true" or placeholder(doc)
 
 
+RENDER_VERSION = 8  # crește la orice schimbare a desenării, ca PDF-urile de vizualizare vechi să fie refăcute
+
+
 def _key(path: Path) -> str:
     st = path.stat()
-    return hashlib.sha1(f"{path}|{st.st_mtime_ns}|{st.st_size}".encode("utf-8", "replace")).hexdigest()[:24]
+    fonts = ",".join(sorted(adobe_fonts()))
+    return hashlib.sha1(f"{RENDER_VERSION}|{path}|{st.st_mtime_ns}|{st.st_size}|{fonts}".encode("utf-8", "replace")
+                        ).hexdigest()[:24]
 
 
 GIF = bytes.fromhex("47494638396101000100800000000000ffffff21f90401000000002c00000000010001000002024401003b")
@@ -58,6 +91,9 @@ def _serve(pdf: bytes, wait: int):
     care o ținem în așteptare până când pagina anunță că a terminat („done”)."""
     token = secrets.token_hex(12)
     done = threading.Event()
+    fonts = adobe_fonts()
+    fonts_json = json.dumps([{"file": n, "family": FONT_FILES[n][0], "weight": FONT_FILES[n][1],
+                              "style": FONT_FILES[n][2]} for n in fonts]).encode("utf-8")
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *a):
@@ -76,6 +112,10 @@ def _serve(pdf: bytes, wait: int):
             elif name == "hold.gif":
                 done.wait(wait)
                 data = GIF
+            elif name == "fonts.json":
+                data = fonts_json
+            elif name.startswith("font/") and name[5:] in fonts:
+                data = fonts[name[5:]].read_bytes()
             else:
                 f = (XFA_DIR / name).resolve()
                 if XFA_DIR.resolve() not in f.parents or not f.is_file():

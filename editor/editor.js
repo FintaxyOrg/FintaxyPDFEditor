@@ -195,9 +195,18 @@ function buildPages() {
 }
 
 function loadImg(p) {
-  const want = Math.min(3000, Math.ceil((p.w * S.scale * (window.devicePixelRatio || 1)) / 300) * 300)
-  if (want <= p.want) return
+  const px = p.w * S.scale * (window.devicePixelRatio || 1)
+  // Declarațiile XFA (ANAF): imaginea are exact mărimea de pe ecran; micșorată de browser, textul lor mic se vedea șters
+  const xfa = S.doc && S.doc.xfaView
+  const want = Math.min(3000, xfa ? Math.round(px) : Math.ceil(px / 300) * 300)
+  if (xfa ? want === p.want : want <= p.want) return
   p.want = want
+  if (xfa) {
+    // imaginea are exact pixelii ecranului: afișată pixel la pixel, browserul n-o mai încețoșează când pagina cade pe o
+    // poziție de jumătate de pixel; până vine imaginea nouă (după zoom), cea veche se micșorează normal
+    p.img.style.imageRendering = ''
+    p.img.addEventListener('load', () => { p.img.style.imageRendering = p.want === want ? 'pixelated' : '' }, { once: true })
+  }
   p.img.src = url('page', { path: PATH, n: p.n, w: want, v: S.ver })
 }
 
@@ -205,7 +214,11 @@ function layout() {
   if (!S.doc) return
   const avail = Math.max(240, main.clientWidth - 48)
   const maxW = Math.max(...S.pages.map(p => p.w))
-  S.scale = (Math.min(avail, 1000) / maxW) * S.zoom
+  // Declarațiile XFA (ANAF): 100% e cât 100% în Adobe Reader, care desenează pagina la ~110 pixeli pe inch (măsurat
+  // alături, la „Mărime reală”), cu 15% peste mărimea din Windows (96); literele lor de 8pt se văd astfel la fel de clar.
+  // Celelalte PDF-uri: 100% = pagina pe lățimea zonei (cel mult 1000px).
+  const base = S.doc.xfaView ? (96 / 72) * 1.15 : Math.min(avail, 1000) / maxW
+  S.scale = base * S.zoom
   for (const p of S.pages) {
     p.el.style.width = `${p.w * S.scale}px`
     p.el.style.height = `${p.h * S.scale}px`

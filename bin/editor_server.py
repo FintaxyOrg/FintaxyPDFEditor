@@ -68,6 +68,38 @@ def open_doc(path: str) -> fitz.Document:
     return doc
 
 
+def darken_text(pix: fitz.Pixmap, page: fitz.Page, z: float) -> bytes:
+    """Declarațiile XFA: Adobe desenează pe ecran literele mai negre decât MuPDF, la care tușele subțiri ies gri.
+    Închidem doar pixelii neutri (negru/gri) mai închiși de 210, numai în rândurile de text (nu și liniile chenarelor,
+    care s-ar îngroșa): textul normal mai tare (exponent 1,5), cel bold mai puțin (0,5), ca să nu iasă mai gros decât
+    în Adobe. Măsurat pe o captură cu ambele alăturate: titlurile bold au cerneala medie 57 (Adobe 57), textul normal
+    puțin peste Adobe. Albul, culorile (fundalul albastru al câmpurilor, roșul, butoanele) și griul deschis al
+    totalurilor rămân cum sunt."""
+    import numpy as np
+    a = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width, pix.n)[..., :3].astype(np.float32)
+    k = np.zeros(a.shape[:2], np.float32)  # 0 = neatins
+    for block in page.get_text("dict")["blocks"]:
+        for line in block.get("lines", []):
+            for span in line["spans"]:
+                bold = span["flags"] & 16 or "bold" in span["font"].lower()
+                r = fitz.IRect(fitz.Rect(span["bbox"]) * fitz.Matrix(z, z)) & fitz.IRect(0, 0, pix.width, pix.height)
+                k[r.y0:r.y1, r.x0:r.x1] = 0.5 if bold else 1.5
+    hi, lo = a.max(axis=2), a.min(axis=2)
+    ink = (k > 0) & (hi < 210) & (hi - lo < 40)
+    f = np.where(ink, (a.mean(axis=2) / 210.0) ** k, 1.0)[..., None]
+    out = np.clip(a * f, 0, 255).astype(np.uint8)
+    # Literele lui Adobe sunt și mai nete (le aliniază la pixeli); o ascuțire ușoară, doar pe rândurile de text, le
+    # aduce aproape: claritatea măsurată pe un titlu urcă de la 54 la ~61 (Adobe 58, cu ecranul tău).
+    from PIL import Image, ImageFilter
+    img = Image.fromarray(out)
+    sharp = img.filter(ImageFilter.UnsharpMask(radius=0.5, percent=60, threshold=0))
+    img = Image.composite(sharp, img, Image.fromarray(((k > 0) * 255).astype(np.uint8)))
+    buf = io.BytesIO()
+    img.save(buf, "PNG", compress_level=1)
+    return buf.getvalue()
+
+
+
 def view_doc(path: str) -> fitz.Document:
     """Documentul din care se desenează paginile. La formularele XFA dinamice (ANAF), pagina din fișier e doar mesajul
     „Please wait…”: arătăm PDF-ul de vizualizare făcut de xfaview. Fișierul original rămâne cel care se semnează."""
@@ -152,9 +184,11 @@ def save_attachment(path: str, key: str) -> str:
 
 def page_png(path: str, n: int, width: int) -> bytes:
     with LOCK:
+        xfa = xfa_preview(path) is not None
         page = view_doc(path)[n - 1]
         z = max(200, min(width, 3000)) / page.rect.width
-        return page.get_pixmap(matrix=fitz.Matrix(z, z), alpha=False).tobytes("png")
+        pix = page.get_pixmap(matrix=fitz.Matrix(z, z), alpha=False)
+        return darken_text(pix, page, z) if xfa else pix.tobytes("png")
 
 
 def sig_indexes(items: list) -> list:
