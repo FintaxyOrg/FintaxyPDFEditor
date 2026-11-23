@@ -57,7 +57,7 @@ Un PDF deja semnat (de exemplu o declarație semnată de alt administrator) prim
 
 - **Formular cu câmpuri**: câmpurile apar evidențiate pe pagină; le completezi și apeși **Salvează** (`<nume>_editat.pdf`).
 - **Declarații ANAF** (D100, D112, D300 etc., formulare XFA): se văd ca în Adobe; deasupra apare XML-ul atașat, cu **Deschide** și **Arată în folder** (se salvează în `<nume> - atasamente`). Datele se completează în programul ANAF (Soft J / DUKIntegrator) sau în Adobe Reader; aici le citești și le semnezi.
-- **Formulare „inteligente” dinamice** (cele care în alte programe arată doar „Please wait…”): fișierul conține doar acea pagină, iar formularul adevărat e desenat de aplicație (pdf.js + Edge, câteva secunde la prima deschidere). Le citești, le printezi și le semnezi electronic; semnătura se adaugă invizibilă, pe fișierul original. Nu se pot edita aici.
+- **Formulare „inteligente” dinamice** (cele care în alte programe arată doar „Please wait…”): fișierul conține doar acea pagină, iar formularul adevărat e desenat de aplicație (pdf.js + Edge, câteva secunde la prima deschidere), ca în Adobe: numerele cu separatorii românești (27.525,55), CIF-ul pe căsuțe, bifele pătrate cu X, tabelele cu toate coloanele, sigla ANAF, caseta „Semnătura”, câmpurile completabile pe fundalul albastru deschis al Adobe, cu chenar roșu la cele obligatorii. Dacă pe calculator e Acrobat sau Adobe Reader, se folosesc și fonturile lui (Myriad Pro, Minion Pro); altfel un font asemănător. Le citești, le printezi și le semnezi electronic; semnătura se adaugă invizibilă, pe fișierul original. Nu se pot edita aici.
 
 ### Validare și semnare declarații
 
@@ -120,6 +120,7 @@ Făcut după „Ask AI” din Fintaxy CRM, prin ACP (Agent Client Protocol), pe 
 | `bin/` | aplicația, în Python: `desktop.py` (pornirea, ferestrele, AI), `editor_server.py` (serverul local al editorului, Stirling), `fx_sign.py` (scrierea în PDF cu PyMuPDF, formulare), `certsign.py` (semnătura electronică: pyHanko + cheia din Windows prin PowerShell), `winenv.py` (ce află de la Windows: fereastra de PIN, cititoare, FintaxySign, unde stă cheia fiecărui certificat), `localtools.py` (uneltele PDF fără Stirling, OCR, redactare), `xfaview.py` (formularele XFA dinamice: PDF de vizualizare făcut cu pdf.js din `editor/xfa` și tipărit cu Edge), `deps.py` (programele în plus și instalarea lor), `anaf.py` (validare și semnare declarații: validatoarele ANAF aduse din `versiuni.xml`, rulate cu Java în linie de comandă), `acp_chat.py` (chatul cu Claude prin ACP), `signature_transparent.py` (fundal transparent la semnături) |
 | `editor/` | interfața (HTML, CSS, JS), servită de `editor_server.py` pe 127.0.0.1 cu token; `assist.js` = chatul, programele în plus, ghidul de pornire |
 | `app/` | `build.ps1` (versiunea portabilă + `PDF-Sign-Setup.exe`), `Setup.cs` (fișierul unic de instalare), `install.ps1` + `Instalare.cmd` / `Dezinstalare.cmd`, iconița, `tessdata/` (limbile OCR) |
+| `tools/patch_pdfjs_xfa.py` | face `editor/xfa` din pdfjs-dist 4.10.38, cu corecturile pentru formularele ANAF (coloane de tabel cu lățime 0, numere după limbă, căsuțe comb, bife, semnătură, sigla BMP, marginile câmpurilor); fiecare corectură e comentată acolo |
 | `tests/` | testele aplicației (vezi mai jos) |
 | `hooks/`, `types/`, `.claude-plugin/` | mod-ul pentru Claude Code (cardul de sub PDF-uri din chat); nu e necesar pentru aplicație. `.claude-plugin/marketplace.json` face din repo un marketplace |
 | `.github/workflows/release.yml` | construiește zip-ul și îl pune la Releases la fiecare tag `v*` |
@@ -205,6 +206,7 @@ Licența e AGPL fiindcă aplicația scrie în PDF cu PyMuPDF (MuPDF), care e AGP
 | PyInstaller (programul de pornire din kit) | GPL-2.0 cu excepție pentru aplicațiile împachetate |
 | Tesseract tessdata (`ron`, `eng`) | Apache-2.0 |
 | iconițe Fluent UI | MIT |
-| pdf.js (`editor/xfa`, desenarea formularelor XFA) | Apache-2.0 |
+| pdf.js (`editor/xfa`, desenarea formularelor XFA; `pdf.worker.mjs` are corecturile din `tools/patch_pdfjs_xfa.py`) | Apache-2.0 |
+| fonturile standard pdf.js (`editor/xfa/standard_fonts`: Foxit, Liberation) | BSD (Foxit), SIL OFL 1.1 (Liberation); licențele sunt în folder |
 
 LibreOffice, Stirling PDF, Node.js și adaptorul Claude nu sunt în kit: aplicația le descarcă de la sursa lor oficială, fiecare sub licența ei.

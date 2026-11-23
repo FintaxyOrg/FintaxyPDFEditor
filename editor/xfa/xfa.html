@@ -7,10 +7,25 @@
 <style>
   /* Formularele XFA dinamice (ANAF): pdf.js le desenează ca HTML, iar Edge le tipărește în PDF, o pagină pe foaie. */
   html, body { margin: 0; padding: 0; background: #fff; }
-  .xfaPrintedPage { position: relative; overflow: hidden; margin: 0; break-after: page; page-break-after: always; }
+  .xfaPrintedPage { position: relative; overflow: hidden; contain: strict; margin: 0; break-after: page; page-break-after: always; }
   .xfaPrintedPage:last-child { break-after: auto; page-break-after: auto; }
   .xfaPrintedPage > .xfaLayer { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
   button, input, select, textarea { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* Ca în Adobe: câmpurile obligatorii au contur roșu și când nu sunt <input> (căsuțele CIF, bifele, grupurile). */
+  /* Un singur chenar roșu, de 2pt, ca la Adobe: acoperă doar linia de 0,5pt a câmpului (la Nume/Prenume/Funcție e gri
+     în șablon) și se întinde spre exterior, ca să nu treacă peste text. */
+  .xfaLayer *:required, .xfaLayer .fxRequired { outline: 2px solid rgb(243, 80, 89); outline-offset: -0.5px; }
+  /* nuanțele din Adobe: roșu-corai la câmpuri, roșu pur la cadrul unui grup de bife obligatoriu */
+  .xfaLayer .xfaExclgroup.fxRequired { outline-color: red; }
+  /* Fundalul câmpurilor completabile, ca pe ecranul Adobe (culoarea lui de evidențiere); cele doar-citire (Nr. crt,
+     totaluri, sume calculate) și caseta de semnătură rămân albe, ca acolo. */
+  .xfaLayer .xfaField:not(.xfaReadOnly):not(.xfaDisabled):not(.xfaNonInteractive)
+    :is(.xfaTextfield, .xfaSelect, .fxCheck):not(.fxSignature) {
+    background-color: rgb(222, 229, 255) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .xfaLayer .fxCheck, .xfaLayer .fxComb { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* Textul de lângă o bifă are lățimea rezervată în șablon (pdf.js îl lăsa să crească peste căsuță și butoane). */
+  .xfaLayer .xfaCaptionForCheckButton[style*="width"] { flex: 0 0 auto; }
 </style>
 <style id="pageSize"></style>
 </head>
@@ -19,10 +34,27 @@
 <img src="hold.gif" alt="" width="1" height="1" style="position:absolute;left:-10px;top:-10px">
 <script type="module">
 import * as pdfjsLib from './pdf.min.mjs'
-pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs'
+pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.mjs'
 const host = document.getElementById('pages')
+const ZOOM = 4
+
+// Fonturile Adobe de pe calculator (Myriad Pro, Minion Pro), dacă există: înlocuiesc fontul pus de pdf.js în locul lor.
+async function adobeFonts () {
+  const families = new Set()
+  try {
+    const list = await (await fetch('fonts.json')).json()
+    await Promise.all(list.map(async f => {
+      const face = new FontFace(`Fx ${f.family}`, `url(font/${encodeURIComponent(f.file)})`, { weight: f.weight, style: f.style })
+      document.fonts.add(await face.load())
+      families.add(f.family)
+    }))
+  } catch (e) {}
+  return families
+}
+
 try {
-  const doc = await pdfjsLib.getDocument({ url: 'doc.pdf', enableXfa: true }).promise
+  const families = await adobeFonts()
+  const doc = await pdfjsLib.getDocument({ url: 'doc.pdf', enableXfa: true, standardFontDataUrl: './standard_fonts/' }).promise
   if (!(await doc.allXfaHtml)) throw new Error('fără XFA')
   const scale = 96 / 72 // un punct PDF = 1/72 in; un pixel CSS la tipar = 1/96 in
   for (let n = 1; n <= doc.numPages; n++) {
@@ -39,8 +71,21 @@ try {
     host.append(sheet)
     const xfaHtml = await page.getXfa()
     if (xfaHtml) {
-      pdfjsLib.XfaLayer.render({ viewport: viewport.clone({ dontFlip: true }), div, xfaHtml, intent: 'print',
+      const vp = viewport.clone({ dontFlip: true })
+      pdfjsLib.XfaLayer.render({ viewport: vp, div, xfaHtml, intent: 'print',
         annotationStorage: doc.annotationStorage, linkService: { addLinkAttributes() {} } })
+      // pdf.js așază formularul în puncte (1px = 1pt) și Chrome rotunjește orice chenar sub 1px la 1px: liniile de 0,5pt
+      // din declarații ieșeau de 1pt, duble față de Adobe. Desenat de ZOOM ori mai mare și readus la scară, nu se mai
+      // rotunjește nimic.
+      div.firstElementChild.style.zoom = ZOOM
+      div.style.transform = `matrix(${vp.scale / ZOOM},0,0,${vp.scale / ZOOM},0,0)`
+    }
+  }
+  // pdf.js scrie fontul lipsă ca „Myriad Pro-PdfJS-XFA” (un înlocuitor); cu fontul Adobe local îl punem pe el întâi.
+  if (families.size) {
+    for (const el of host.querySelectorAll('[style*="PdfJS-XFA"]')) {
+      el.style.fontFamily = el.style.fontFamily.replace(/"([^"]+)-PdfJS-XFA"/g,
+        (m, name) => families.has(name) ? `"Fx ${name}", ${m}` : m)
     }
   }
   // Fonturile din formular, încărcate explicit: document.fonts.ready ar aștepta „load”, pe care îl ținem noi pe loc.

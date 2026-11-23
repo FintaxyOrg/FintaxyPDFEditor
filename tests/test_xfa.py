@@ -35,6 +35,15 @@ TEMPLATE = """<template xmlns="http://www.xfa.org/schema/xfa-template/3.3/">
 <draw name="titlu" x="10pt" y="10pt" w="480pt" h="30pt"><ui><textEdit/></ui><value><text>FORMULAR DE TEST XFA</text></value><font typeface="Arial" size="18pt" weight="bold"/></draw>
 <field name="cui" x="10pt" y="70pt" w="300pt" h="24pt"><ui><textEdit><border><edge/></border></textEdit></ui><caption placement="left" reserve="120pt"><value><text>Cod fiscal</text></value><font typeface="Arial" size="10pt"/></caption><value><text>12345678</text></value><font typeface="Arial" size="11pt"/><bind match="dataRef" ref="$.cui"/></field>
 <field name="denumire" x="10pt" y="110pt" w="480pt" h="24pt"><ui><textEdit><border><edge/></border></textEdit></ui><caption placement="left" reserve="120pt"><value><text>Denumire</text></value><font typeface="Arial" size="10pt"/></caption><font typeface="Arial" size="11pt"/><bind match="dataRef" ref="$.denumire"/></field>
+<field name="suma" x="10pt" y="150pt" w="300pt" h="24pt"><ui><numericEdit><border><edge/></border></numericEdit></ui><caption placement="left" reserve="120pt"><value><text>Suma</text></value></caption><para hAlign="right"/><value><decimal/></value><font typeface="Times New Roman" size="11pt"/><bind match="dataRef" ref="$.suma"/></field>
+<field name="cif" x="10pt" y="190pt" w="300pt" h="24pt"><ui><textEdit><border><edge/></border><comb numberOfCells="10"/></textEdit></ui><font typeface="Times New Roman" size="11pt"/><bind match="dataRef" ref="$.cif"/></field>
+<subform name="tabel" layout="table" x="10pt" y="230pt" columnWidths="120pt 0mm"><subform name="rand" layout="row">
+<draw w="120pt" h="20pt"><ui><textEdit/></ui><value><text>Baza 100</text></value><font typeface="Times New Roman" size="10pt"/></draw>
+<draw w="90pt" h="20pt"><ui><textEdit/></ui><value><text>TVA 21</text></value><font typeface="Times New Roman" size="10pt"/></draw>
+</subform></subform>
+<field name="bifa" x="10pt" y="270pt" w="200pt" h="20pt"><ui><checkButton/></ui><caption placement="right" reserve="180pt"><value><text>Bifat</text></value></caption><items><integer>1</integer><integer>0</integer></items><bind match="dataRef" ref="$.bifa"/></field>
+<field name="semnatura" x="250pt" y="270pt" w="200pt" h="60pt"><ui><signature><border><edge/></border></signature></ui><caption placement="bottom" reserve="14pt"><para hAlign="center"/><value><text>Semnătura</text></value></caption><font typeface="Times New Roman" size="10pt"/><bind match="none"/></field>
+<draw name="sigla" x="10pt" y="350pt" w="80pt" h="40pt"><value><image contentType="image/bmp" aspect="none">%BMP%</image></value></draw>
 </subform>
 <subform name="p2" w="523pt" h="770pt"><break before="pageArea"/>
 <draw name="pagina2" x="10pt" y="10pt" w="480pt" h="30pt"><ui><textEdit/></ui><value><text>PAGINA A DOUA</text></value><font typeface="Arial" size="14pt"/></draw>
@@ -42,7 +51,26 @@ TEMPLATE = """<template xmlns="http://www.xfa.org/schema/xfa-template/3.3/">
 </subform>
 </template>"""
 DATASETS = ('<xfa:datasets xmlns:xfa="http://www.xfa.org/schema/xfa-data/1.0/"><xfa:data><form1><cui>12345678</cui>'
-            "<denumire>EXEMPLU TEST SRL</denumire></form1></xfa:data></xfa:datasets>")
+            "<denumire>EXEMPLU TEST SRL</denumire><suma>27525.5</suma><cif>4365</cif><bifa>1</bifa></form1></xfa:data>"
+            "</xfa:datasets>")
+
+
+def bmp_offset_zero() -> str:
+    """Sigla ANAF are offsetul datelor din antetul BMP pus pe 0 (Adobe o arată, Chrome o decalează): o imagine
+    40x20 roșu în stânga, albastru în dreapta, cu același defect."""
+    import base64
+    import io
+    from PIL import Image
+    im = Image.new("RGB", (40, 20), (255, 0, 0))
+    im.paste((0, 0, 255), (20, 0, 40, 20))
+    buf = io.BytesIO()
+    im.save(buf, "BMP")
+    data = bytearray(buf.getvalue())
+    data[10:14] = bytes(4)
+    return base64.b64encode(bytes(data)).decode("ascii")
+
+
+TEMPLATE = TEMPLATE.replace("%BMP%", bmp_offset_zero())
 
 
 def check(name: str, ok, detail=""):
@@ -102,6 +130,28 @@ def main():
         check("se vede textul formularului", "FORMULAR DE TEST XFA" in text[0] and "PAGINA A DOUA" in text[-1], text[0][:120])
         check("se văd datele completate", "12345678" in text[0] and "EXEMPLU TEST SRL" in text[0], text[0][:200])
         check("nu mai apare «Please wait»", "please wait" not in " ".join(text).lower())
+
+    print("== ca în Adobe ==")
+    with fitz.open(pv) as d:
+        page = d[0]
+        words = [w[4] for w in page.get_text("words")]
+        check("numărul are separatorii limbii (ro_RO: 27.525,5) și e aliniat la dreapta",
+              "27.525,5" in words and next(w for w in page.get_text("words") if w[4] == "27.525,5")[2] > 300,
+              [w for w in page.get_text("words") if "27" in w[4]])
+        check("CIF-ul pe căsuțe (comb): fiecare cifră în căsuța ei", words.count("4") >= 1 and "4365" not in words,
+              [w for w in words if w and w[0] in "4365"])
+        check("coloana de tabel cu lățime 0 primește lățimea conținutului (ca în Adobe)", "21" in words and "TVA" in words, words)
+        check("câmpul de semnătură se vede, cu textul de sub el", "Semnătura" in page.get_text())
+        pix = page.get_pixmap(dpi=72, clip=fitz.Rect(36 + 10, 36 + 350, 36 + 90, 36 + 390))
+        left, right = pix.pixel(pix.width // 4, pix.height // 2), pix.pixel(3 * pix.width // 4, pix.height // 2)
+        check("imaginea BMP cu offsetul 0 (sigla ANAF) nu e decalată", left[0] > 200 and left[2] < 80 and right[2] > 200 and right[0] < 80,
+              (left, right))
+        box = fitz.Rect(36 + 10, 36 + 270, 36 + 30, 36 + 290)
+        lines = [it for dr in page.get_drawings() if box.intersects(dr["rect"]) and dr["rect"].width < 30
+                 for it in dr["items"] if it[0] == "l"]
+        diag = {(it[2].x - it[1].x) * (it[2].y - it[1].y) > 0 for it in lines
+                if abs(abs(it[2].x - it[1].x) - abs(it[2].y - it[1].y)) < 0.5 and abs(it[2].x - it[1].x) > 2}
+        check("bifa e ca în Adobe: pătrat cu X (nu bifa rotunjită a browserului)", diag == {True, False}, lines[:4])
     check("a doua cerere vine din cache", xfaview.preview(xfa) == pv)
 
     print("== editorul ==")
