@@ -523,6 +523,65 @@ button.primary.big { height: 40px; padding: 0 22px; font-size: 14.5px; border-ra
 .rail [data-panel=chat].on { background: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .shimmer, .ct-a.streaming > :last-child::after { animation-duration: 1ms; } }
 
+/* ---- chat, ca Ask AI din CRM: istoric, atașamente, model, limite ---- */
+.dh h2 { min-width: 0; display: flex; align-items: center; }
+.ct-title { min-width: 0; max-width: 190px; margin-left: 8px; padding: 2px 6px; border: 0; border-radius: 6px; background: none; color: #59636e; font: inherit; font-size: 13px; font-weight: 400;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.ct-title:hover { background: rgba(129, 139, 152, .10); color: var(--ink); }
+.cc-foot .grow { flex: 1; }
+.cc-attach { width: 28px; height: 28px; min-width: 28px; border-radius: 8px; color: var(--c-text2); }
+.cc-attach svg.i { width: 16px; height: 16px; }
+.cc-model { display: inline-flex; align-items: baseline; gap: 5px; height: 26px; max-width: 170px; border: 0; background: transparent; border-radius: 6px; padding: 0 6px; font: inherit; font-size: 13px; font-weight: 500; color: var(--c-text2); cursor: pointer; }
+.cc-model:hover { background: var(--c-hover); } .cc-model .mn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .cc-model .me { font-weight: 400; color: var(--c-text3); font-size: 12px; }
+.cc-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.cc-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 200px; height: 30px; padding: 0 4px 0 4px; border-radius: 8px; background: var(--c-panel); box-shadow: inset 0 0 0 1px var(--c-border); font-size: 12.5px; }
+.cc-chip img { width: 22px; height: 22px; object-fit: cover; border-radius: 4px; } .cc-chip svg.i { width: 14px; height: 14px; color: var(--c-text3); margin-left: 4px; }
+.cc-chip .tt { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cc-chip .x { border: 0; background: none; width: 20px; height: 20px; border-radius: 5px; color: var(--c-text3); font-size: 15px; line-height: 1; padding: 0; }
+.cc-chip .x:hover { background: var(--c-hover); color: var(--ink); } .cc-chip.busy { opacity: .7; } .cc-chip .spin { width: 11px; height: 11px; border-width: 1.5px; margin: 0; }
+.chat.drop .chat-composer { box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 4px var(--accent-soft); }
+.ct-qwrap { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 85%; margin-top: 6px; }
+.ct-qwrap .ct-q { max-width: 100%; margin-top: 0; }
+.ct-files { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.ct-file { display: inline-flex; align-items: center; gap: 4px; max-width: 200px; height: 24px; padding: 0 8px; border-radius: 6px; background: var(--c-panel); box-shadow: inset 0 0 0 1px var(--c-border); font-size: 12px; color: var(--c-text2); }
+.ct-file svg.i { width: 12px; height: 12px; flex: none; } .ct-file span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ct-done { display: flex; flex-direction: column; gap: 8px; margin-top: -8px; }
+.ct-note { color: var(--c-text2); font-size: 13px; } .ct-note::before { content: "⚠ "; }
+.ct-made { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--c-border); font-size: 13px; }
+.ct-made .muted { font-size: 12px; }
+.ct-made-row { display: flex; align-items: center; gap: 6px; } .ct-made-row svg.i { width: 13px; height: 13px; color: var(--c-text3); flex: none; }
+.ct-made-row .tt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ct-made-row .ct-act-btn { height: 24px; padding: 0 8px; font-size: 12px; }
+.ct-a hr { border: 0; border-top: 1px solid var(--c-border); margin: 4px 0 12px; }
+.ct-a blockquote { margin: 0 0 10px; padding: 2px 0 2px 10px; border-left: 3px solid var(--c-border); color: var(--c-text2); }
+.rail [data-panel=chat].attn { position: relative; }
+.rail [data-panel=chat].attn::after { content: ""; position: absolute; top: 5px; right: 5px; width: 8px; height: 8px; border-radius: 50%; background: #d1242f; box-shadow: 0 0 0 2px #fff; }
+.cc-ring { width: 28px; height: 28px; min-width: 28px; }
+.cc-ring svg.ring { width: 17px; height: 17px; } .cc-ring circle { fill: none; stroke-width: 2.4; } .cc-ring .bg { stroke: #d8dee4; } .cc-ring .fg { stroke: #59636e; stroke-linecap: round; }
+.cc-ring.warn .fg { stroke: #bf8700; } .cc-ring.bad .fg { stroke: #d1242f; }
+.cpop { position: fixed; z-index: 60; min-width: 220px; max-width: 340px; background: #fff; border-radius: 12px; box-shadow: 0 8px 28px rgba(20, 23, 32, .18), 0 0 0 1px rgba(20, 23, 32, .08); padding: 6px; font-size: 13.5px; color: var(--ink); }
+.cpop-body { display: flex; flex-direction: column; gap: 2px; } .cpop-pad { padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+.cpop-pad .spin { width: 12px; height: 12px; border-width: 1.5px; margin: 0 6px 0 0; display: inline-block; vertical-align: -2px; }
+.cpop-head { display: flex; align-items: center; padding: 8px 10px 4px; font-size: 12px; font-weight: 600; color: #59636e; }
+.cpop-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 4px 10px; border: 0; background: none; border-radius: 8px; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.cpop-row:hover, .cpop-row:focus-visible { background: rgba(129, 139, 152, .12); outline: none; } .cpop-row.cur { font-weight: 500; }
+.cpop-row svg.i { width: 14px; height: 14px; color: var(--accent); flex: none; } .cpop-row .grow { display: flex; align-items: center; gap: 6px; }
+.cc-badge { font-size: 11px; font-weight: 500; padding: 1px 6px; border-radius: 10px; background: #fff3cd; color: #7a5a00; }
+.cpop-history { width: 330px; max-width: calc(100vw - 24px); }
+.cpop-search { width: 100%; height: 32px; margin: 2px 0 6px; padding: 0 10px; border: 1px solid #d1d9e0; border-radius: 8px; font: inherit; outline: none; }
+.cpop-search:focus { border-color: var(--accent); }
+.cpop-list { max-height: 360px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+.hc-row { display: flex; align-items: center; gap: 2px; border-radius: 8px; } .hc-row:hover, .hc-row.cur { background: rgba(129, 139, 152, .10); }
+.hc-row > button.icon { width: 26px; height: 26px; min-width: 26px; border-radius: 6px; color: #818b98; opacity: 0; } .hc-row:hover > button.icon, .hc-row > button.icon:focus-visible { opacity: 1; }
+.hc-row > button.icon svg.i { width: 13px; height: 13px; }
+.hc-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px; border: 0; background: none; border-radius: 8px; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.hc-title .tt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .hc-title svg.i { width: 12px; height: 12px; color: #bf8700; flex: none; }
+.hc-title .spin { width: 10px; height: 10px; border-width: 1.5px; margin: 0; } .hc-when { font-size: 12px; flex: none; }
+.hc-rename { flex: 1; height: 30px; padding: 0 8px; border: 1px solid var(--accent); border-radius: 8px; font: inherit; outline: none; }
+.cpop-usage { width: 280px; } .lim { display: flex; flex-direction: column; gap: 4px; } .lim + .lim { margin-top: 6px; } .lim .muted { font-size: 12px; }
+.lim-top { display: flex; justify-content: space-between; gap: 8px; }
+.lim-bar { height: 6px; border-radius: 3px; background: #eaeef2; overflow: hidden; } .lim-bar span { display: block; height: 100%; background: #59636e; border-radius: 3px; }
+.lim-bar.warn span { background: #bf8700; } .lim-bar.bad span { background: #d1242f; }
+
 /* ---- validare și semnare declarații (validatoarele ANAF) ---- */
 .anaf-title { font-weight: 600; }
 .anaf-meta { display: block; color: var(--muted); margin-top: 2px; }
