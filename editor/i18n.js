@@ -270,8 +270,9 @@ const EN = {
   'Recapitulativă intracomunitară': 'EC sales list', 'Livrări și achiziții pe teritoriul național': 'Domestic supplies and purchases',
   'Declarație rectificativă': 'Corrective return', 'Declarația unică': 'Single tax return',
   'Semnează mai multe PDF-uri': 'Sign several PDFs', 'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN.': 'Electronic signature on several PDFs at once, with a single PIN.',
-  'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN. Fiecare PDF e semnat în câmpul lui de semnătură gol (declarațiile ANAF, formularele) sau, dacă nu are, invizibil. Lângă fiecare apare <nume>_semnat.pdf.':
-    'Electronic signature on several PDFs at once, with a single PIN. Each PDF is signed in its empty signature field (ANAF returns, forms) or, if it has none, invisibly. A <name>_semnat.pdf appears next to each.',
+  'În caseta „{0}” a formularului (ca în Acrobat)': 'In the form\'s “{0}” box (as in Acrobat)',
+  'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN. Fiecare PDF e semnat în câmpul lui de semnătură gol (declarațiile ANAF, formularele, inclusiv caseta „Semnătura” a formularelor inteligente) sau, dacă nu are, invizibil. Lângă fiecare apare <nume>_semnat.pdf.':
+    'Electronic signature on several PDFs at once, with a single PIN. Each PDF is signed in its empty signature field (ANAF returns, forms, including the “Semnătura” box of smart forms) or, if it has none, invisibly. A <name>_semnat.pdf appears next to each.',
   'Certificat': 'Certificate', '↻ Reîncarcă': '↻ Reload', 'Se încarcă certificatele…': 'Loading certificates…',
   'Niciun certificat de semnare în Windows': 'No signing certificate in Windows',
   'Buletinul electronic: e în cititor? Stick-ul din birou: pornește FintaxySign și verifică să scrie „connected” și „Driver installed”, apoi apasă Reîncarcă.':
