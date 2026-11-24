@@ -98,7 +98,7 @@ try {
     for (const el of sheet.querySelectorAll('.fxSignature')) {
       const r = el.getBoundingClientRect()
       sigs.push({ page: i, x0: (r.left - top.left) / scale, y0: (r.top - top.top) / scale,
-                  x1: (r.right - top.left) / scale, y1: (r.bottom - top.top) / scale })
+                  x1: (r.right - top.left) / scale, y1: (r.bottom - top.top) / scale, pageHeight: top.height / scale })
     }
   })
   await fetch('sigs', { method: 'POST', body: JSON.stringify(sigs) }).catch(() => {})

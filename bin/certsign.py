@@ -8,6 +8,7 @@ PIN-ul în fereastra lui. Un singur proces PowerShell ține cheia deschisă pent
 în bloc PIN-ul se cere o dată.
 """
 import base64
+import datetime
 import hashlib
 import io
 import json
@@ -28,6 +29,8 @@ from pyhanko_certvalidator.registry import SimpleCertificateStore
 
 import fx_sign
 import winenv
+import xfasign
+import xfaview
 
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -396,19 +399,49 @@ def output_for(pdf: Path) -> Path:
 
 def sign_pdf(signer: WinSigner, pdf: str, place: dict | None = None, reason: str = "", location: str = "") -> str:
     """Semnează un PDF. place: {"field": nume} = câmpul de semnătură existent;
-    {"page": n, "rect": [x0, y0, x1, y1]} = semnătură vizibilă nouă (pt, pagina cum se vede); None = invizibilă."""
+    {"page": n, "rect": [x0, y0, x1, y1]} = semnătură vizibilă nouă (pt, pagina cum se vede);
+    {"xfa": nume SOM} = caseta de semnătură a unui formular XFA dinamic (ANAF), ca în Acrobat; None = invizibilă."""
     src = Path(pdf)
     data = src.read_bytes()
+    xfa_rect = None
+    if place and place.get("xfa"):
+        xfa_name = place["xfa"]
+        with FITZ_LOCK, fitz.open(stream=data, filetype="pdf") as doc:
+            if any(f["name"] == xfa_name and f["signed"] for f in signature_fields(doc)):
+                raise ValueError("Caseta de semnătură a formularului e deja semnată.")
+            names = [f["name"] for f in xfasign.fields(doc)]
+            existing = {f["name"] for f in signature_fields(doc)}
+        if xfa_name not in names:
+            raise ValueError("Formularul nu are caseta de semnătură cerută.")
+        if xfa_name in existing:  # câmpul există deja (ex. pus de Acrobat, gol): semnăm în el
+            place = {"field": xfa_name}
+        else:
+            got = xfasign.rect_for(str(src), names.index(xfa_name))
+            if not got:
+                raise ValueError("Formularul nu a putut fi desenat, deci nu știu unde e caseta de semnătură. "
+                                 "Semnează invizibil sau încearcă din nou.")
+            xfa_rect = got[1]
     with FITZ_LOCK, fitz.open(stream=data, filetype="pdf") as doc:
         if doc.needs_pass:
             raise ValueError("PDF-ul are parolă; scoate-o întâi.")
         existing = signature_fields(doc)
         new_spec = None
         field = None
-        if place and place.get("field"):
+        acrobat_size = None  # (lățime, înălțime): semnătură în caseta unui formular XFA -> aspectul ca la Acrobat
+        if xfa_rect is not None:
+            field = place["xfa"]
+            acrobat_size = (xfa_rect[2] - xfa_rect[0], xfa_rect[3] - xfa_rect[1])
+        elif place and place.get("field"):
             field = place["field"]
             if any(f["name"] == field and f["signed"] for f in existing):
                 raise ValueError(f"Câmpul „{field}” e deja semnat.")
+            # câmpul există deja (pus de Acrobat sau de o pregătire a declarației) și e caseta de semnătură a
+            # formularului XFA: același aspect ca atunci când îl creăm noi
+            if xfaview.needs(doc) and field in {g["name"] for g in xfasign.fields(doc)}:
+                f0 = next((f for f in existing if f["name"] == field), None)
+                if f0 and f0.get("rect"):
+                    r0 = f0["rect"]
+                    acrobat_size = (r0[2] - r0[0], r0[3] - r0[1])
         else:
             taken = {f["name"] for f in existing}
             field = next(f"Semnatura{k}" for k in range(1, 999) if f"Semnatura{k}" not in taken)
@@ -428,7 +461,22 @@ def sign_pdf(signer: WinSigner, pdf: str, place: dict | None = None, reason: str
                            border_width=1, border_color=(0.55, 0.6, 0.7))
     out_buf = io.BytesIO()
     w = IncrementalPdfFileWriter(io.BytesIO(data), strict=False)
-    signers.PdfSigner(meta, signer, stamp_style=style, new_field_spec=new_spec).sign_pdf(w, output=out_buf)
+    look = None
+    if xfa_rect is not None:
+        # formular XFA dinamic fără câmp: câmpul cu numele de la Acrobat, în aceeași actualizare cu semnătura
+        xfasign.add_field(w, field, xfa_rect)
+    if acrobat_size and acrobat_size[0] > 1 and acrobat_size[1] > 1:
+        look = xfasign.look(plain(name), datetime.datetime.now().astimezone(), *acrobat_size)
+        if look:
+            style = xfasign.stamp_style(look)
+    try:
+        signers.PdfSigner(meta, signer, stamp_style=style, new_field_spec=new_spec).sign_pdf(w, output=out_buf)
+    finally:
+        if look:
+            try:
+                Path(look).unlink(missing_ok=True)
+            except OSError:  # aspectul rămâne în folderul de stare; nu oprește semnarea
+                pass
 
     target = output_for(src)
     bak = fx_sign.backup_path(target)
@@ -446,6 +494,20 @@ def first_empty_field(pdf: str) -> str:
     """Câmpul de semnătură gol și vizibil (ex. „Semnătura” din declarațiile ANAF), dacă există."""
     with FITZ_LOCK, fitz.open(pdf) as doc:
         return next((f["name"] for f in signature_fields(doc) if not f["signed"] and f["visible"]), "")
+
+
+def auto_place(pdf: str):
+    """Locul semnăturii la semnarea în bloc / după validarea declarațiilor: câmpul gol al documentului; la un formular
+    XFA dinamic fără câmp, caseta lui de semnătură (ca Acrobat); altfel invizibilă (None)."""
+    f = first_empty_field(pdf)
+    if f:
+        return {"field": f}
+    with FITZ_LOCK, fitz.open(pdf) as doc:
+        if not xfaview.needs(doc):
+            return None
+        signed = {g["name"] for g in signature_fields(doc) if g["signed"]}
+        free = [g["name"] for g in xfasign.fields(doc) if g["name"] not in signed]
+    return {"xfa": free[0]} if free else None
 
 
 def sign_many(thumb: str, items: list, reason: str = "", location: str = "", on_done=None, key: WinKey | None = None,
@@ -470,8 +532,7 @@ def sign_many(thumb: str, items: list, reason: str = "", location: str = "", on_
                 if not Path(it["path"]).is_file():
                     raise FileNotFoundError("Fișierul nu mai există.")
                 if place == "auto":
-                    f = first_empty_field(it["path"])
-                    place = {"field": f} if f else None
+                    place = auto_place(it["path"])
                 out = sign_pdf(signer, it["path"], place, reason, location)
                 res = {"path": it["path"], "ok": True, "out": out, "s": round(time.time() - t, 1)}
             except SignStop as err:

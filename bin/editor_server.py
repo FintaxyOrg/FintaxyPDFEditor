@@ -125,6 +125,12 @@ def is_xfa_view(path: str) -> bool:
 XFA_LOCKED = "Formularul inteligent (XFA) nu se poate modifica aici: îl citești, îl printezi și îl semnezi electronic."
 
 
+def xfa_sigfields(doc) -> list:
+    import xfasign
+    signed = {f["name"] for f in fx_sign.signature_fields(doc) if f["signed"]}
+    return [f for f in xfasign.fields(doc) if f["name"] not in signed]
+
+
 def doc_info(path: str) -> dict:
     with LOCK:
         doc = open_doc(path)
@@ -137,6 +143,8 @@ def doc_info(path: str) -> dict:
             "xfaView": view is not doc,
             "signed": fx_sign.is_signed(doc),
             "sigfields": fx_sign.signature_fields(doc),
+            # Formular XFA dinamic: casetele de semnătură din formular (semnătura vizibilă, ca în Acrobat), nesemnate.
+            "xfaSigfields": xfa_sigfields(doc) if view is not doc else [],
             # Formularele XFA (ANAF) se completează în programul lor: Adobe citește datele din XFA, nu din câmpuri.
             "xfa": xfa, "fields": 0 if xfa else sum(1 for p in doc for w in p.widgets()
                                                     if w.field_type in fx_sign.FIELD_KINDS and not w.field_flags & 1),

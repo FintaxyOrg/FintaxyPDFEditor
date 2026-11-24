@@ -1464,10 +1464,13 @@ function openCertSign() {
   if (changed().length) form.append(h('div', { class: 'warn' }, 'Ai modificări nesalvate. Semnătura se pune pe fișierul salvat: apasă întâi Salvează.'))
   if (S.doc.signed) form.append(h('div', { class: 'warn' }, 'PDF-ul are deja o semnătură; a ta se adaugă după ea, fără s-o strice.'))
   const thumb = certPicker(form)
-  const empty = S.doc.sigfields.filter(f => !f.signed && f.visible)
-  // Formular XFA dinamic: pagina din fișier nu e cea de pe ecran, deci semnătura nu are unde să fie desenată.
-  if (S.doc.xfaView) form.append(h('div', { class: 'warn' }, 'Formular inteligent (XFA): semnătura se adaugă invizibilă și se vede în panoul de semnături.'))
-  const opts = [...empty.map(f => [`field:${f.name}`, `În câmpul de semnătură de pe pagina ${f.page}`]),
+  const xfaSigs = S.doc.xfaView ? (S.doc.xfaSigfields || []) : []
+  const empty = S.doc.xfaView ? [] : S.doc.sigfields.filter(f => !f.signed && f.visible)
+  // Formular XFA dinamic: semnătura merge în caseta de semnătură a formularului, ca în Acrobat (câmpul cu numele lui);
+  // un formular fără casetă se semnează invizibil.
+  if (S.doc.xfaView && !xfaSigs.length) form.append(h('div', { class: 'warn' }, 'Formular inteligent (XFA): semnătura se adaugă invizibilă și se vede în panoul de semnături.'))
+  const opts = [...xfaSigs.map(f => [`xfa:${f.name}`, tr('În caseta „{0}” a formularului (ca în Acrobat)').replace('{0}', f.caption || 'Semnătura')]),
+    ...empty.map(f => [`field:${f.name}`, `În câmpul de semnătură de pe pagina ${f.page}`]),
     ...(S.doc.xfaView ? [] : [['box', 'Aleg locul pe pagină (trag un dreptunghi)']]), ['none', 'Invizibilă (se vede în panoul de semnături)']]
   const where = h('select', {}, ...opts.map(([v, l]) => h('option', { value: v }, l)))
   const boxInfo = h('small', {})
@@ -1500,6 +1503,7 @@ function openCertSign() {
     if (!t) return result.replaceChildren(h('div', { class: 'result err' }, 'Alege certificatul.'))
     let place = null
     if (where.value.startsWith('field:')) place = { field: where.value.slice(6) }
+    else if (where.value.startsWith('xfa:')) place = { xfa: where.value.slice(4) }
     else if (where.value === 'box') {
       if (!box) return pick()
       place = { page: box.p.n, rect: box.rect }
@@ -1526,7 +1530,7 @@ function openBulkSign() {
   const files = S.doc ? [S.doc.path] : []
   const form = h('div', { class: 'form' })
   openDrawer('Semnează mai multe PDF-uri', h('div', { class: 'db' }, form))
-  form.append(h('p', { class: 'desc' }, 'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN. Fiecare PDF e semnat în câmpul lui de semnătură gol (declarațiile ANAF, formularele) sau, dacă nu are, invizibil. Lângă fiecare apare <nume>_semnat.pdf.'))
+  form.append(h('p', { class: 'desc' }, 'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN. Fiecare PDF e semnat în câmpul lui de semnătură gol (declarațiile ANAF, formularele, inclusiv caseta „Semnătura” a formularelor inteligente) sau, dacă nu are, invizibil. Lângă fiecare apare <nume>_semnat.pdf.'))
   const list = h('div', { class: 'blist' })
   const add = h('button', { class: 'secondary', type: 'button' }, '+ Adaugă PDF-uri…')
   const go = h('button', { class: 'primary' })

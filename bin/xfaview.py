@@ -72,7 +72,7 @@ def needs(doc) -> bool:
     return doc.xref_get_key(doc.pdf_catalog(), "NeedsRendering")[1] == "true" or placeholder(doc)
 
 
-RENDER_VERSION = 9  # crește la orice schimbare a desenării, ca PDF-urile de vizualizare vechi să fie refăcute
+RENDER_VERSION = 10  # crește la orice schimbare a desenării, ca PDF-urile de vizualizare vechi să fie refăcute
 
 
 def _key(path: Path) -> str:
@@ -242,6 +242,10 @@ def preview(path, timeout: int = 150):
             tmp.unlink(missing_ok=True)
             _failed.setdefault(key, "Edge nu a putut desena formularul.")
             return None
+        try:  # casetele de semnătură ale formularului: semnarea vizibilă (xfasign) le folosește ca loc al câmpului
+            (CACHE / f"{key}.sigs.json").write_text(json.dumps(boxes), encoding="utf-8")
+        except OSError:
+            pass
         try:
             place_signatures(path, tmp, boxes)
         except Exception as e:  # noqa: BLE001 — formularul se vede oricum; doar semnătura nu e pusă peste el
@@ -249,7 +253,20 @@ def preview(path, timeout: int = 150):
         os.replace(tmp, target)
         for old in sorted(CACHE.glob("*.pdf"), key=lambda f: f.stat().st_mtime)[:-40]:  # păstrăm ultimele 40
             old.unlink(missing_ok=True)
+            old.with_suffix(".sigs.json").unlink(missing_ok=True)
         return target
+
+
+def signature_boxes(path) -> list:
+    """Casetele de semnătură desenate pe formularul XFA (puncte, origine sus-stânga, pe pagina formularului):
+    [{"page", "x0", "y0", "x1", "y1", "pageHeight"}]. Desenează formularul dacă nu e deja în cache."""
+    if not preview(path):
+        return []
+    f = CACHE / f"{_key(Path(path))}.sigs.json"
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
 
 
 if __name__ == "__main__":
