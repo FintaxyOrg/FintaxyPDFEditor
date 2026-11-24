@@ -90,6 +90,18 @@ try {
   }
   // Fonturile din formular, încărcate explicit: document.fonts.ready ar aștepta „load”, pe care îl ținem noi pe loc.
   await Promise.all([...document.fonts].map(f => f.load().catch(() => {})))
+  // Casetele de semnătură ale formularului (în puncte, față de colțul de sus al paginii): PDF Sign pune în ele
+  // aspectul semnăturilor vizibile din fișier, cum face Acrobat (pdf.js nu desenează semnăturile AcroForm peste XFA).
+  const sigs = []
+  host.querySelectorAll('.xfaPrintedPage').forEach((sheet, i) => {
+    const top = sheet.getBoundingClientRect()
+    for (const el of sheet.querySelectorAll('.fxSignature')) {
+      const r = el.getBoundingClientRect()
+      sigs.push({ page: i, x0: (r.left - top.left) / scale, y0: (r.top - top.top) / scale,
+                  x1: (r.right - top.left) / scale, y1: (r.bottom - top.top) / scale, pageHeight: top.height / scale })
+    }
+  })
+  await fetch('sigs', { method: 'POST', body: JSON.stringify(sigs) }).catch(() => {})
   document.title = `xfa-ok ${doc.numPages}`
 } catch (e) {
   document.title = 'xfa-error'

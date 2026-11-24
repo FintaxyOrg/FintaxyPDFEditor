@@ -84,6 +84,8 @@ def main(folder: Path):
     chat.send("Scrie un fișier.", 1, crm, False)
     events, seq = drain(chat, seq, revs, on_perm=lambda e: chat.answer(e["id"], "allow"))
     check("acord: fișierul e scris", target.exists() and target.read_text() == "test")
+    done = [e for e in events if e["type"] == "done"][-1]
+    check("fișierul scris de Claude apare la finalul turei", any(x.endswith("nota-agent.txt") for x in done.get("files") or []), str(done))
     target.unlink()
 
     # „mereu în conversația asta”: a doua oară nu mai întreabă
@@ -123,6 +125,44 @@ def main(folder: Path):
     check("conexiunile schimbate pornesc o sesiune nouă", chat.session_id != sid and "MCP: niciunul" in text, text[-80:])
     check("sesiunea nouă primește ce s-a vorbit înainte", "Istoric: True" in text, text[-60:])
 
+    # sesiunea închisă (nefolosită) se reia: aceeași sesiune Claude Code, fără istoric trimis ca text
+    sid = chat.session_id
+    acp_chat.AGENT.close_session(sid)
+    chat.send("Ce număr are contractul?", 1, [], False)
+    events, seq = drain(chat, seq, revs)
+    text = "".join(e["text"] for e in events if e["type"] == "text")
+    check("sesiune închisă: se reia (session/resume), nu se trimite istoricul", chat.session_id == sid and "Istoric: False" in text, text[-90:])
+
+    # modelul și efortul din compozitor
+    opts = acp_chat.options({"model": "opus", "effort": "max"})
+    check("opțiuni: modelele și efortul vin de la Claude Code", [o["value"] for o in opts["model"]["options"]] == ["default", "opus", "haiku"]
+          and opts["model"]["current"] == "opus" and opts["effort"]["current"] == "max", str(opts))
+    chat.send("Ce număr are contractul?", 1, [], False, prefs={"model": "opus", "effort": "max"})
+    events, seq = drain(chat, seq, revs)
+    text = "".join(e["text"] for e in events if e["type"] == "text")
+    check("modelul și efortul ales ajung la sesiune", "Model: opus/max" in text, text[-90:])
+
+    # atașamente: imaginea merge ca imagine, orice fișier ca listă de căi
+    png = acp_chat.save_upload("captura.png", b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+    doc = acp_chat.save_upload("nota.txt", b"salut")
+    check("atașament salvat, cu numele curățat", png["kind"] == "image" and doc["kind"] == "file" and png["name"] == "captura.png", str(png))
+    chat.send("", 1, [], False, files=[acp_chat.upload_path(png["id"]), acp_chat.upload_path(doc["id"])])
+    events, seq = drain(chat, seq, revs)
+    text = "".join(e["text"] for e in events if e["type"] == "text")
+    user = [e for e in events if e["type"] == "user"][-1]
+    check("atașamente: imaginea ajunge ca imagine, fișierele ca listă", "Imagini: 1" in text and "Atașate: 1" in text, text[-90:])
+    check("fără text, mesajul cere să se uite la fișier", "atașat" in user["text"] and [x["name"] for x in user["files"]] == ["captura.png", "nota.txt"], str(user))
+    try:
+        acp_chat.upload_path("../../etc/x")
+        check("atașament în afara folderului e refuzat", False)
+    except acp_chat.AcpError:
+        check("atașament în afara folderului e refuzat", True)
+
+    # stopReason refusal: mesaj pe înțeles
+    chat.send("refuz", 1, [], False)
+    events, seq = drain(chat, seq, revs)
+    check("refuz: tura se încheie cu explicația", events[-1]["type"] == "done" and "refuzat" in events[-1].get("note", ""), str(events[-1]))
+
     # agentul moare la mijloc
     chat.send("Numără rar.", 1, [], False)
     time.sleep(0.8)
@@ -131,7 +171,23 @@ def main(folder: Path):
     check("agent oprit pe neașteptate: eroare clară, fără blocaj", not chat.running and events[-1]["type"] == "error", str(events[-1]))
     chat.send("Ce număr are contractul?", 1, [], False)
     events, seq = drain(chat, seq, revs)
+    text = "".join(e["text"] for e in events if e["type"] == "text")
     check("după oprire, următorul mesaj repornește agentul", events[-1]["type"] == "done", str(events[-1]))
+    check("după oprire, sesiunea nouă primește istoricul (reluarea nu mai e posibilă)", "Istoric: True" in text, text[-90:])
+
+    # Oprește la un agent care nu ascultă: tura se încheie în câteva secunde, celelalte conversații merg mai departe
+    other = acp_chat.new_chat(str(f["doc"]))
+    chat.send("Fii încăpățânat.", 1, [], False)
+    time.sleep(0.5)
+    t = time.time()
+    chat.cancel()
+    events, seq = drain(chat, seq, revs, until=15)
+    check("Oprește fără răspuns de la agent: tura se încheie în ~3 s", not chat.running and events[-1].get("stop") == "cancelled"
+          and time.time() - t < 6, f"{time.time() - t:.1f}s {events[-1]}")
+    check("Oprește nu oprește agentul (celelalte conversații)", acp_chat.AGENT.alive())
+    other.send("Ce număr are contractul?", 1, [], False)
+    oe, _ = drain(other, 0, {})
+    check("altă conversație a aceluiași PDF merge în paralel", oe[-1]["type"] == "done", str(oe[-1]))
 
     # titluri pe înțelesul omului și detaliul cererii de acord
     check("titlu unealtă: comandă", acp_chat.describe_tool("Bash", "x", {"command": "mkdir a\npython b.py", "description": "Face folderul"}) == "Rulează o comandă: Face folderul")
@@ -144,13 +200,41 @@ def main(folder: Path):
     # istoricul rămâne după repornirea aplicației
     saved = chat.file
     check("istoricul e salvat pe disc", saved.is_file())
-    again = acp_chat.Chat(str(f["doc"]))
-    check("după repornire, conversația e la loc", len(again.events) > 5 and again.events[0]["type"] == "user" and again.needs_context,
-          len(again.events))
+    again = acp_chat.Chat(chat.id, str(f["doc"]))
+    again._load(json.loads(saved.read_text(encoding="utf-8")))
+    check("după repornire, conversația e la loc", len(again.events) > 5 and again.events[0]["type"] == "user", len(again.events))
     check("gândirea și cererile de acord nu se salvează", not any(e["type"] in ("thought", "perm") for e in again.events))
+    check("«Mereu în acest chat» se păstrează după repornire", "Write" in again.always, str(again.always))
+    check("sesiunea Claude Code se ține minte pentru reluare", bool(again.session_sig) and again.session_id == chat.session_id,
+          f"{again.session_id} {chat.session_id}")
 
-    chat.reset()
-    check("Conversație nouă: istoricul e gol", chat.since(0, {}, wait=0.1)["events"] == [] and not saved.exists())
+    # mai multe conversații pe document: listă, titlu automat, redenumire, stea, ștergere
+    lst = acp_chat.chats_for(str(f["doc"]))
+    check("lista: ambele conversații ale PDF-ului", {c["id"] for c in lst} == {chat.id, other.id}, str(lst))
+    end = time.time() + 10
+    while other.title != "Titlu de test" and time.time() < end:
+        time.sleep(0.2)
+    check("titlu automat după primul răspuns (modelul rapid)", other.title == "Titlu de test" and other.title_source == "auto", other.title)
+    check("titlul ajunge și în citirea evenimentelor", other.since(0, {}, wait=0)["title"] == "Titlu de test")
+    acp_chat.rename(other.id, "  Contractul   de sediu ")
+    acp_chat.star(other.id, True)
+    lst = acp_chat.chats_for(str(f["doc"]))
+    check("redenumire + stea: prima în listă, cu numele dat", lst[0]["id"] == other.id and lst[0]["title"] == "Contractul de sediu" and lst[0]["starred"], str(lst[0]))
+    check("titlul pus de om nu e suprascris", other.title_source == "user")
+    check("fără id: se deschide cea mai recentă conversație", acp_chat.chat_for(str(f["doc"])).id in (chat.id, other.id))
+    ht = acp_chat.heuristic_title("te rog, rezumă contractul de la https://x.ro?")
+    check("titlu din întrebare (fără Claude)", ht == "Rezumă contractul de la", ht)
+    ofile = other.file
+    acp_chat.delete(other.id)
+    check("ștergere: dispare din listă și de pe disc", other.id not in {c["id"] for c in acp_chat.chats_for(str(f["doc"]))} and not ofile.exists())
+    fresh = acp_chat.new_chat(str(f["doc"]))
+    check("Conversație nouă: goală, cea veche rămâne în istoric", fresh.since(0, {}, wait=0.1)["events"] == [] and saved.exists())
+
+    # limitele abonamentului
+    u = acp_chat.usage(force=True)
+    five = next((x for x in u["limits"] if x["id"] == "five_hour"), {})
+    check("utilizare: limitele din /usage", u["available"] and u["plan"] == "Max" and five.get("percent") == 23 and bool(five.get("resetsAt")), str(u))
+    check("data de resetare fără an e în viitorul apropiat", acp_chat.parse_reset("Nov 30, 3:59 PM GMT+2", now=1795000000) is not None)
     acp_chat.shutdown()
     time.sleep(0.5)
     check("la închidere, agentul e oprit", not acp_chat.AGENT.alive())

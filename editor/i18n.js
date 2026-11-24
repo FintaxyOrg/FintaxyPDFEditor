@@ -83,6 +83,11 @@ const EN = {
   'Am trimis comentariul în chatul cu Claude.': 'Sent the comment to the Claude chat.',
   'Claude încă răspunde la mesajul dinainte. Așteaptă sau apasă Oprește.': 'Claude is still answering the previous message. Wait or press Stop.',
   'Legătura cu Claude nu e instalată încă.': 'The Claude link is not installed yet.',
+  'Conversația nu mai există.': 'The chat no longer exists.', 'Conversația e a altui document.': 'The chat belongs to another document.',
+  'Scrie un nume.': 'Write a name.', 'Fișierul atașat nu mai există.': 'The attached file no longer exists.',
+  'Fișierul nu mai există.': 'The file no longer exists.', 'Claude Code nu rulează.': 'Claude Code is not running.',
+  'Instalarea nu a reușit.': 'The installation failed.', 'Unealtă': 'Tool',
+  'Fiecare conexiune are nevoie de un nume și de o adresă care începe cu https://': 'Each connection needs a name and an address that starts with https://',
   // bara de sus și uneltele din stânga (index.html)
   'Arată în Explorer': 'Show in Explorer', 'Copiază calea fișierului': 'Copy file path', 'Deschide alt PDF (Ctrl+O)': 'Open another PDF (Ctrl+O)',
   'Pagina anterioară': 'Previous page', 'Pagina următoare': 'Next page', 'Micșorează': 'Zoom out', 'Potrivește lățimea': 'Fit width',
@@ -270,8 +275,9 @@ const EN = {
   'Recapitulativă intracomunitară': 'EC sales list', 'Livrări și achiziții pe teritoriul național': 'Domestic supplies and purchases',
   'Declarație rectificativă': 'Corrective return', 'Declarația unică': 'Single tax return',
   'Semnează mai multe PDF-uri': 'Sign several PDFs', 'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN.': 'Electronic signature on several PDFs at once, with a single PIN.',
-  'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN. Fiecare PDF e semnat în câmpul lui de semnătură gol (declarațiile ANAF, formularele) sau, dacă nu are, invizibil. Lângă fiecare apare <nume>_semnat.pdf.':
-    'Electronic signature on several PDFs at once, with a single PIN. Each PDF is signed in its empty signature field (ANAF returns, forms) or, if it has none, invisibly. A <name>_semnat.pdf appears next to each.',
+  'În caseta „{0}” a formularului (ca în Acrobat)': 'In the form\'s “{0}” box (as in Acrobat)',
+  'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN. Fiecare PDF e semnat în câmpul lui de semnătură gol (declarațiile ANAF, formularele, inclusiv caseta „Semnătura” a formularelor inteligente) sau, dacă nu are, invizibil. Lângă fiecare apare <nume>_semnat.pdf.':
+    'Electronic signature on several PDFs at once, with a single PIN. Each PDF is signed in its empty signature field (ANAF returns, forms, including the “Semnătura” box of smart forms) or, if it has none, invisibly. A <name>_semnat.pdf appears next to each.',
   'Certificat': 'Certificate', '↻ Reîncarcă': '↻ Reload', 'Se încarcă certificatele…': 'Loading certificates…',
   'Niciun certificat de semnare în Windows': 'No signing certificate in Windows',
   'Buletinul electronic: e în cititor? Stick-ul din birou: pornește FintaxySign și verifică să scrie „connected” și „Driver installed”, apoi apasă Reîncarcă.':
@@ -363,6 +369,10 @@ const PATTERNS = [
   [/^Claude nu e conectat pe acest calculator .*$/, 'Claude is not connected on this computer (or the sign-in expired). Press “Connect Claude”, type /login in the window that opens, then send the message again.'],
   [/^Claude Code nu a pornit: /, 'Claude Code did not start: '],
   [/^Claude Code s-a oprit\./, 'Claude Code stopped.'],
+  [/^Claude Code nu a răspuns la „(.+)” în (\d+) s\.$/, 'Claude Code did not answer “$1” within $2 s.'],
+  [/^Instalez legătura cu Claude .*$/, 'Installing the Claude link (once, ~1 minute)…'],
+  [/^Instalarea nu a pornit: (.*)$/, 'The installation did not start: $1'],
+  [/^Lipsește Node\.js .*$/, 'Node.js is missing (it installs by itself, in the background).'],
   [/^Click pe pagină unde vrei să-i spui ceva lui (.+)$/, 'Click the page where you want to tell $1 something'],
   [/^Trage un dreptunghi peste zona pe care vrei s-o trimiți lui (.+)$/, 'Drag a rectangle over the area you want to send to $1'],
   [/^Comentariu pentru (.+) \(C\)$/, 'Comment for $1 (C)'],

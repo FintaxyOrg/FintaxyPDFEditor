@@ -6,6 +6,10 @@ Ce face depinde de textul mesajului:
   „scrie”   -> cere acordul pentru scrierea unui fișier; îl scrie doar dacă e aprobat
   „numără”  -> răspuns lung, în multe bucăți (pentru Oprește)
   „login”   -> eroare de autentificare, ca atunci când Claude Code nu e conectat
+  „refuz”   -> tură încheiată cu stopReason „refusal”
+  „încăpățânat” -> ignoră Oprește (aplicația trebuie să încheie singură tura)
+  „/usage”  -> limitele abonamentului, ca Claude Code
+  un prompt de sistem care cere un titlu -> „Titlu de test”
   altfel    -> „citește” PDF-ul (o unealtă) și răspunde cu calea folderului de lucru
 """
 import json
@@ -46,9 +50,29 @@ def ask(method, params):
     return PENDING.pop(rid)["result"] or {}
 
 
+MODELS = [{"value": "default", "name": "Default"}, {"value": "opus", "name": "Opus"}, {"value": "haiku", "name": "Haiku"}]
+EFFORTS = [{"value": "low", "name": "Low"}, {"value": "high", "name": "High"}, {"value": "max", "name": "Max"}]
+
+
+def config(sid):
+    s = SESSIONS[sid]
+    return [{"id": "model", "type": "select", "name": "Model", "currentValue": s["model"], "options": MODELS},
+            {"id": "effort", "type": "select", "name": "Effort", "currentValue": s["effort"], "options": EFFORTS}]
+
+
 def prompt(rid, p):
     sid = p["sessionId"]
+    if SESSIONS[sid].get("closed"):
+        return send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": "Session closed"}})
     body = " ".join(b.get("text", "") for b in p.get("prompt") or [])
+    images = sum(1 for b in p.get("prompt") or [] if b.get("type") == "image")
+    if isinstance(SESSIONS[sid]["system"], str) and "name chat conversations" in SESSIONS[sid]["system"]:
+        text(sid, "Titlu de test")
+        return send({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
+    if body.strip() == "/usage":
+        text(sid, "## Claude Max subscription usage\n\n**5-hour limit** — **23%** · Resets Nov 30, 3:59 PM GMT+2\n"
+                  "**Weekly · all models** — **61%** · Resets Dec 2, 9:00 AM GMT+2\n")
+        return send({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
     # doar mesajul omului hotărăște scenariul, nu și istoricul pus în față la o sesiune nouă
     low = body.rsplit("]\n\n", 1)[-1].lower()
     SESSIONS[sid]["context"] = "Earlier in this conversation" in body
@@ -56,6 +80,14 @@ def prompt(rid, p):
     if "login" in low:
         text(sid, "Failed to authenticate: OAuth session expired and could not be refreshed")
         return send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": "Authentication required"}})
+    if "refuz" in low:
+        text(sid, "Nu pot face asta.")
+        return send({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "refusal"}})
+    if "încăpățânat" in low:
+        for i in range(400):  # nu se uită la anulare
+            text(sid, f"{i} ")
+            time.sleep(0.05)
+        return send({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
     update(sid, {"sessionUpdate": "agent_thought_chunk", "content": {"type": "text", "text": "Mă uit la document."}})
     if "scrie" in low:
         target = Path(cwd) / "nota-agent.txt"
@@ -109,7 +141,9 @@ def prompt(rid, p):
     update(sid, {"sessionUpdate": "tool_call_update", "toolCallId": "t-read", "status": "completed"})
     for part in ("Contractul are numărul **42** ", "și e din 18.11.2026. ", f"Folder de lucru: {cwd}. ",
                  f"MCP: {','.join(m['name'] for m in SESSIONS[sid]['mcp']) or 'niciunul'}. ",
-                 f"Sistem: {'PDF Sign' in SESSIONS[sid]['system']}. ", f"Istoric: {SESSIONS[sid].get('context')}."):
+                 f"Sistem: {'PDF Sign' in SESSIONS[sid]['system']}. ", f"Istoric: {SESSIONS[sid].get('context')}. ",
+                 f"Model: {SESSIONS[sid]['model']}/{SESSIONS[sid]['effort']}. ", f"Imagini: {images}. ",
+                 f"Atașate: {body.count('Attached files')}. ", f"Sesiune: {sid}."):
         text(sid, part)
         time.sleep(0.05)
     # sugestiile de continuare, în bucăți (ca să se vadă că eticheta nu clipește în pagină cât se scrie)
@@ -135,13 +169,35 @@ def main():
             continue
         method, p, rid = m["method"], m.get("params") or {}, m.get("id")
         if method == "initialize":
-            send({"jsonrpc": "2.0", "id": rid, "result": {"protocolVersion": 1, "agentCapabilities": {"loadSession": False},
+            send({"jsonrpc": "2.0", "id": rid, "result": {"protocolVersion": 1, "agentCapabilities": {
+                "loadSession": True, "promptCapabilities": {"image": True}, "sessionCapabilities": {"resume": {}, "close": {}}},
                                                              "agentInfo": {"name": "fake", "version": "0"}}})
         elif method == "session/new":
             sid = f"s{len(SESSIONS) + 1}"
+            meta = p.get("_meta") or {}
+            sysp = meta.get("systemPrompt")
+            opts = (meta.get("claudeCode") or {}).get("options") or {}
             SESSIONS[sid] = {"cwd": p.get("cwd"), "mcp": p.get("mcpServers") or [],
-                             "system": ((p.get("_meta") or {}).get("systemPrompt") or {}).get("append", "")}
-            send({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "modes": {"currentModeId": "default", "availableModes": [{"id": "default"}]}}})
+                             "system": sysp if isinstance(sysp, str) else (sysp or {}).get("append", ""),
+                             "model": opts.get("model") or "default", "effort": "high"}
+            send({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "configOptions": config(sid),
+                                                           "modes": {"currentModeId": "default", "availableModes": [{"id": "default"}]}}})
+        elif method in ("session/resume", "session/load"):
+            sid = p.get("sessionId")
+            if sid not in SESSIONS:
+                send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32002, "message": "Resource not found"}})
+            else:
+                SESSIONS[sid]["closed"] = False
+                SESSIONS[sid]["resumed"] = SESSIONS[sid].get("resumed", 0) + 1
+                send({"jsonrpc": "2.0", "id": rid, "result": {"configOptions": config(sid)}})
+        elif method == "session/close":
+            if p.get("sessionId") in SESSIONS:
+                SESSIONS[p["sessionId"]]["closed"] = True
+            send({"jsonrpc": "2.0", "id": rid, "result": {}})
+        elif method == "session/set_config_option":
+            sid = p["sessionId"]
+            SESSIONS[sid][p["configId"]] = p["value"]
+            send({"jsonrpc": "2.0", "id": rid, "result": {"configOptions": config(sid)}})
         elif method == "session/prompt":
             threading.Thread(target=prompt, args=(rid, p), daemon=True).start()
         elif method == "session/cancel":

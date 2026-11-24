@@ -72,7 +72,7 @@ def needs(doc) -> bool:
     return doc.xref_get_key(doc.pdf_catalog(), "NeedsRendering")[1] == "true" or placeholder(doc)
 
 
-RENDER_VERSION = 8  # crește la orice schimbare a desenării, ca PDF-urile de vizualizare vechi să fie refăcute
+RENDER_VERSION = 10  # crește la orice schimbare a desenării, ca PDF-urile de vizualizare vechi să fie refăcute
 
 
 def _key(path: Path) -> str:
@@ -91,6 +91,7 @@ def _serve(pdf: bytes, wait: int):
     care o ținem în așteptare până când pagina anunță că a terminat („done”)."""
     token = secrets.token_hex(12)
     done = threading.Event()
+    sigs: list = []  # casetele de semnătură desenate de pdf.js (xfa.html le trimite înainte de „done”)
     fonts = adobe_fonts()
     fonts_json = json.dumps([{"file": n, "family": FONT_FILES[n][0], "weight": FONT_FILES[n][1],
                               "style": FONT_FILES[n][2]} for n in fonts]).encode("utf-8")
@@ -98,6 +99,18 @@ def _serve(pdf: bytes, wait: int):
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
+
+        def do_POST(self):
+            if self.path.split("?", 1)[0] != f"/{token}/sigs":
+                return self.send_error(404)
+            try:
+                n = min(int(self.headers.get("Content-Length") or 0), 100_000)
+                got = json.loads(self.rfile.read(n) or b"[]")
+                sigs[:] = [b for b in got if isinstance(b, dict) and {"page", "x0", "y0", "x1", "y1"} <= b.keys()][:50]
+            except (ValueError, TypeError):
+                pass
+            self.send_response(204)
+            self.end_headers()
 
         def do_GET(self):
             path = self.path.split("?", 1)[0]
@@ -130,7 +143,7 @@ def _serve(pdf: bytes, wait: int):
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    return server, f"http://127.0.0.1:{server.server_address[1]}/{token}/xfa.html"
+    return server, f"http://127.0.0.1:{server.server_address[1]}/{token}/xfa.html", sigs
 
 
 def _print(url: str, out: Path, timeout: int):
@@ -152,6 +165,56 @@ def _good(pdf: Path) -> bool:
         return False
 
 
+def visible_signatures(doc) -> list:
+    """Semnăturile vizibile (semnate) din fișier: [(pagina, Rect brut [x0 y0 x1 y1], numele câmpului)]."""
+    out = []
+    for page in doc:
+        for w in page.widgets() or []:
+            if w.field_type != fitz.PDF_WIDGET_TYPE_SIGNATURE or doc.xref_get_key(w.xref, "V")[0] == "null":
+                continue
+            raw = [float(v) for v in doc.xref_get_key(w.xref, "Rect")[1].strip("[] ").split()]
+            if len(raw) == 4 and abs(raw[2] - raw[0]) > 1 and abs(raw[3] - raw[1]) > 1:
+                out.append((page.number, raw, w.field_name))
+    return out
+
+
+def place_signatures(src: Path, rendered: Path, boxes: list):
+    """Pune aspectul semnăturilor vizibile din fișier în casetele de semnătură desenate de pdf.js, ca Acrobat.
+
+    Pe un formular XFA dinamic, câmpul de semnătură AcroForm stă pe pagina „Please wait…”; Acrobat îl arată în
+    câmpul XFA cu același nume. Aici: fiecare semnătură merge în caseta desenată cea mai apropiată de locul ei
+    (/Rect e în coordonatele paginii formularului, ca la Acrobat), vectorial, din aspectul ei (/AP)."""
+    with fitz.open(src) as d:
+        sigs = visible_signatures(d)
+        if not sigs or not boxes:
+            return
+        baked = fitz.open()
+        baked.insert_pdf(d)
+    for page in baked:  # rămân doar aspectele câmpurilor, fără textul paginii de așteptare
+        for xr in page.get_contents():
+            baked.update_stream(xr, b"")
+    baked.bake(annots=False, widgets=True)
+    free = list(boxes)
+    with fitz.open(rendered) as r:
+        for pno, (x0, y0, x1, y1), _name in sigs:
+            if not free:
+                break
+            H = r[0].rect.height
+            want = fitz.Rect(x0, H - y1, x1, H - y0)
+            box = min(free, key=lambda b: abs(b["x0"] - want.x0) + abs(b["y0"] - want.y0) + 1000 * (b["page"] != pno))
+            free.remove(box)
+            if box["page"] >= r.page_count:
+                continue
+            sh = baked[pno].rect.height
+            clip = fitz.Rect(x0, sh - y1, x1, sh - y0)
+            dest = fitz.Rect(box["x0"], box["y0"], box["x1"], box["y1"])
+            r[box["page"]].show_pdf_page(dest, baked, pno, clip=clip, keep_proportion=True, overlay=True)
+        out = rendered.with_name(rendered.stem + ".sig.pdf")
+        r.save(out, garbage=1, deflate=True)
+    baked.close()
+    os.replace(out, rendered)
+
+
 def preview(path, timeout: int = 150):
     """PDF-ul de vizualizare al unui formular XFA dinamic (din cache sau făcut acum); None dacă nu se poate face."""
     path = Path(path)
@@ -167,7 +230,7 @@ def preview(path, timeout: int = 150):
         CACHE.mkdir(parents=True, exist_ok=True)
         tmp = CACHE / f"{key}-{os.getpid()}.tmp.pdf"
         tmp.unlink(missing_ok=True)
-        server, url = _serve(path.read_bytes(), timeout - 30)
+        server, url, boxes = _serve(path.read_bytes(), timeout - 30)
         try:
             _print(url, tmp, timeout)
         except Exception as e:  # Edge lipsă sau blocat: editorul arată pagina din fișier, ca până acum
@@ -179,10 +242,31 @@ def preview(path, timeout: int = 150):
             tmp.unlink(missing_ok=True)
             _failed.setdefault(key, "Edge nu a putut desena formularul.")
             return None
+        try:  # casetele de semnătură ale formularului: semnarea vizibilă (xfasign) le folosește ca loc al câmpului
+            (CACHE / f"{key}.sigs.json").write_text(json.dumps(boxes), encoding="utf-8")
+        except OSError:
+            pass
+        try:
+            place_signatures(path, tmp, boxes)
+        except Exception as e:  # noqa: BLE001 — formularul se vede oricum; doar semnătura nu e pusă peste el
+            print(f"xfa: semnăturile nu au putut fi puse peste formular: {e}", file=sys.stderr)
         os.replace(tmp, target)
         for old in sorted(CACHE.glob("*.pdf"), key=lambda f: f.stat().st_mtime)[:-40]:  # păstrăm ultimele 40
             old.unlink(missing_ok=True)
+            old.with_suffix(".sigs.json").unlink(missing_ok=True)
         return target
+
+
+def signature_boxes(path) -> list:
+    """Casetele de semnătură desenate pe formularul XFA (puncte, origine sus-stânga, pe pagina formularului):
+    [{"page", "x0", "y0", "x1", "y1", "pageHeight"}]. Desenează formularul dacă nu e deja în cache."""
+    if not preview(path):
+        return []
+    f = CACHE / f"{_key(Path(path))}.sigs.json"
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
 
 
 if __name__ == "__main__":

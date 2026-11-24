@@ -19,6 +19,14 @@ const SVG = {
   stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
   help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  clip: '<path d="m16 6-8.41 8.59a2 2 0 0 0 2.83 2.83l8.49-8.48a4 4 0 0 0-5.66-5.66l-8.49 8.49a6 6 0 0 0 8.49 8.49l8.48-8.49"/>',
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+  image: '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/>',
+  history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  star: '<path d="M11.52 2.3a.53.53 0 0 1 .95 0l2.31 4.68a2.12 2.12 0 0 0 1.6 1.16l5.17.76a.53.53 0 0 1 .29.9l-3.74 3.64a2.12 2.12 0 0 0-.61 1.88l.88 5.14a.53.53 0 0 1-.77.56l-4.62-2.43a2.12 2.12 0 0 0-1.97 0L6.4 21.01a.53.53 0 0 1-.77-.56l.88-5.13a2.12 2.12 0 0 0-.61-1.88L2.16 9.8a.53.53 0 0 1 .29-.9l5.17-.76a2.12 2.12 0 0 0 1.6-1.16z"/>',
+  starFill: '<path fill="currentColor" d="M11.52 2.3a.53.53 0 0 1 .95 0l2.31 4.68a2.12 2.12 0 0 0 1.6 1.16l5.17.76a.53.53 0 0 1 .29.9l-3.74 3.64a2.12 2.12 0 0 0-.61 1.88l.88 5.14a.53.53 0 0 1-.77.56l-4.62-2.43a2.12 2.12 0 0 0-1.97 0L6.4 21.01a.53.53 0 0 1-.77-.56l.88-5.13a2.12 2.12 0 0 0-.61-1.88L2.16 9.8a.53.53 0 0 1 .29-.9l5.17-.76a2.12 2.12 0 0 0 1.6-1.16z"/>',
+  pencil: '<path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
 }
 function svg(name) {
   const t = document.createElement('template')
@@ -31,11 +39,16 @@ const info = text => X.h('span', { class: 'infomark', 'data-tip': text, tabindex
 // ---------- markdown, cât trebuie pentru răspunsurile lui Claude ----------
 const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 function inline(s) {
+  // linkurile ies întâi din text (ca să nu le strice stilurile), apoi se pun la loc: [text](https://…) și adresele goale
+  const links = []
+  const hold = (label, href) => `\u0000${links.push([label, href]) - 1}\u0000`
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (m, t, u) => hold(t, u))
+    .replace(/https?:\/\/[^\s<>()\u0000]*[^\s<>().,;:!?'"\u0000]/g, u => hold(u, u))
   return esc(s)
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
     .replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>')
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/\u0000(\d+)\u0000/g, (m, i) => `<a href="${esc(links[i][1])}" target="_blank" rel="noopener">${esc(links[i][0])}</a>`)
 }
 function markdown(src) {
   const out = []
@@ -65,7 +78,10 @@ function markdown(src) {
     }
     flush()
     const hd = line.match(/^(#{1,4})\s+(.*)$/)
-    if (hd) out.push(`<h4>${inline(hd[2])}</h4>`)
+    const quote = line.match(/^\s*>\s?(.*)$/)
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) out.push('<hr>')
+    else if (quote) out.push(`<blockquote>${inline(quote[1])}</blockquote>`)
+    else if (hd) out.push(`<h4>${inline(hd[2])}</h4>`)
     else if (line.trim()) out.push(`<p>${inline(line)}</p>`)
   }
   if (code) out.push(`<pre>${esc(code.join('\n'))}</pre>`)
@@ -147,91 +163,365 @@ export function openDeps() {
 // ---------- chatul cu Claude ----------
 // Făcut după „Ask AI” din Fintaxy CRM: întrebarea într-o bulă la dreapta, răspunsul fără bulă, câte un rând compact
 // pentru fiecare unealtă, cardul de acord cu detaliul acțiunii, „Se gândește…”, sugestii de continuare sub ultimul
-// răspuns, copiere și reîncercare, mod Manual / Auto în compozitor.
-const chats = new Map() // cale -> { seq, revs, events: Map(seq -> eveniment), running }
+// răspuns, copiere și reîncercare; mai multe conversații pe document (istoric, titlu, stea, redenumire, ștergere),
+// atașamente (lipite, trase, alese), modelul și efortul, modul Manual / Auto și inelul cu limitele abonamentului.
+const chats = new Map() // id conversație -> { id, path, seq, revs, events: Map(seq -> eveniment), running, title }
+const current = new Map() // cale (litere mici) -> id-ul conversației deschise
 let poll = 0 // schimbat la fiecare deschidere: bucla veche de citire se oprește singură
+let watch = 0 // bucla din fundal (panoul închis cât Claude lucrează)
+const text = s => document.createTextNode(String(s ?? '')) // textul omului și al lui Claude: netradus
+const MAX_FILES = 5
+const MAX_MB = 20
 
-function chatState(path) {
-  const k = path.toLowerCase()
-  if (!chats.has(k)) chats.set(k, { seq: 0, revs: {}, events: new Map(), running: false })
-  return chats.get(k)
+function chatState(id, path) {
+  if (!chats.has(id)) chats.set(id, { id, path, seq: 0, revs: {}, events: new Map(), running: false, title: '' })
+  return chats.get(id)
 }
+function apply(st, r) { // evenimentele primite de la server intră în starea conversației
+  st.running = r.running
+  if (r.title != null) st.title = r.title
+  for (const e of r.events) {
+    st.events.set(e.seq, e)
+    st.revs[e.seq] = e.rev || 0
+    st.seq = Math.max(st.seq, e.seq)
+  }
+}
+const eventsOf = st => [...st.events.values()].sort((a, b) => a.seq - b.seq)
 
 // Răspunsul fără blocul <followups> (care devine butoane); cât se scrie, un început de etichetă („<follo”) e ascuns.
 const TAG = '<followups>'
-function splitFollowups(text, streaming) {
-  const i = text.indexOf(TAG)
+function splitFollowups(txt, streaming) {
+  const i = txt.indexOf(TAG)
   if (i >= 0) {
-    const follow = text.slice(i + TAG.length).replace(/<\/followups>[\s\S]*$/, '').split('\n')
+    const follow = txt.slice(i + TAG.length).replace(/<\/followups>[\s\S]*$/, '').split('\n')
       .map(l => l.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim()).filter(l => l && l.length <= 160).slice(0, 3)
-    return { shown: text.slice(0, i).trimEnd(), follow }
+    return { shown: txt.slice(0, i).trimEnd(), follow }
   }
-  if (streaming) for (let k = Math.min(TAG.length - 1, text.length); k > 0; k--) if (text.endsWith(TAG.slice(0, k))) return { shown: text.slice(0, -k), follow: [] }
-  return { shown: text, follow: [] }
+  if (streaming) for (let k = Math.min(TAG.length - 1, txt.length); k > 0; k--) if (txt.endsWith(TAG.slice(0, k))) return { shown: txt.slice(0, -k), follow: [] }
+  return { shown: txt, follow: [] }
+}
+// Textul răspunsului unei ture (de la întrebare până la `seq`), fără sugestii: pentru „Copiază”.
+function turnText(st, seq) {
+  const evs = eventsOf(st).filter(e => e.seq <= seq)
+  const iUser = evs.map(e => e.type).lastIndexOf('user')
+  return splitFollowups(evs.slice(iUser + 1).filter(e => e.type === 'text').map(e => e.text).join('\n\n'), false).shown
+}
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); X.toast(T('Copiat', 'Copied')) } catch { X.toast(T('Nu am putut copia', 'Could not copy'), { err: true }) }
+}
+const isPdf = f => /\.pdf$/i.test(f)
+const baseName = f => String(f).split(/[\\/]/).pop()
+
+function rel(ms) {
+  const s = (Date.now() - ms) / 1000
+  if (s < 60) return T('acum', 'now')
+  if (s < 3600) return T(`acum ${Math.floor(s / 60)} min`, `${Math.floor(s / 60)} min ago`)
+  if (s < 86400) return T(`acum ${Math.floor(s / 3600)} h`, `${Math.floor(s / 3600)} h ago`)
+  if (s < 7 * 86400) return T(`acum ${Math.floor(s / 86400)} zile`, `${Math.floor(s / 86400)} days ago`)
+  return new Date(ms).toLocaleDateString(lang() === 'en' ? 'en-GB' : 'ro-RO', { day: 'numeric', month: 'short' })
 }
 
-function eventNode(e, path, running) {
+// Un meniu mic lângă un buton; se închide la clic în afară sau Esc.
+let openPop = null
+function popover(anchor, content, { up = false, cls = '' } = {}) {
+  closePop()
+  const r = anchor.getBoundingClientRect()
+  const el = X.h('div', { class: `cpop ${cls}`, role: 'menu' }, content)
+  el.style.right = `${Math.max(8, innerWidth - r.right)}px`
+  if (up) el.style.bottom = `${innerHeight - r.top + 6}px`
+  else el.style.top = `${r.bottom + 6}px`
+  document.body.append(el)
+  const away = e => { if (!el.contains(e.target) && !anchor.contains(e.target)) closePop() }
+  const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); closePop(); anchor.focus() } }
+  setTimeout(() => document.addEventListener('pointerdown', away, true))
+  el.addEventListener('keydown', esc)
+  openPop = { el, off: () => document.removeEventListener('pointerdown', away, true) }
+  return el
+}
+function closePop() {
+  if (!openPop) return
+  openPop.off()
+  openPop.el.remove()
+  openPop = null
+}
+
+function fileChips(files) {
   const { h } = X
-  if (e.type === 'user') return h('div', { class: 'ct-q' }, e.text)
+  return h('div', { class: 'ct-files' }, ...files.map(f => h('span', { class: 'ct-file', title: f.name }, svg(f.kind === 'image' ? 'image' : 'file'), h('span', {}, text(f.name)))))
+}
+
+function eventNode(e, st, running) {
+  const { h } = X
+  if (e.type === 'user') {
+    const q = h('div', { class: 'ct-q' }, text(e.text))
+    if (!e.files?.length) return q
+    return h('div', { class: 'ct-qwrap' }, fileChips(e.files), q)
+  }
   if (e.type === 'text') {
     const shown = splitFollowups(e.text, running).shown
     return shown.trim() ? h('div', { class: 'ct-a', html: markdown(shown) }) : null
   }
   if (e.type === 'thought') {
-    return h('div', { class: 'ct-thinking' }, h('span', { class: 'shimmer' }, T('Se gândește…', 'Thinking…')), h('div', { class: 'ct-thought' }, e.text.slice(-300)))
+    return h('div', { class: 'ct-thinking' }, h('span', { class: 'shimmer' }, T('Se gândește…', 'Thinking…')), h('div', { class: 'ct-thought' }, text(e.text.slice(-300))))
   }
   if (e.type === 'tool') {
-    const st = e.status === 'completed' ? 'ok' : e.status === 'failed' ? 'bad' : 'run'
-    return h('div', { class: `ct-tool st-${st}`, title: e.title }, svg('wrench'), h('span', { class: 'tt' }, e.title),
-      st === 'ok' ? svg('check') : st === 'bad' ? svg('fail') : running ? h('span', { class: 'spin' }) : null)
+    const s = e.status === 'completed' ? 'ok' : e.status === 'failed' ? 'bad' : 'run'
+    return h('div', { class: `ct-tool st-${s}`, title: e.title }, svg('wrench'), h('span', { class: 'tt' }, text(e.title)),
+      s === 'ok' ? svg('check') : s === 'bad' ? svg('fail') : running ? h('span', { class: 'spin' }) : null)
   }
   if (e.type === 'plan') {
-    return h('div', { class: 'ct-plan' }, ...(e.entries || []).map(x => h('div', { class: `pl ${x.status}` }, h('span', { class: 'dot' }), h('span', {}, x.content))))
+    return h('div', { class: 'ct-plan' }, ...(e.entries || []).map(x => h('div', { class: `pl ${x.status}` }, h('span', { class: 'dot' }), h('span', {}, text(x.content)))))
   }
   if (e.type === 'perm') {
     if (e.state !== 'ask') return null // după răspuns cardul dispare; rândul uneltei arată ce s-a întâmplat
-    const answer = choice => X.post('chat/permission', { path, id: e.id, choice }).catch(err => X.toast(err.message, { err: true }))
+    const answer = choice => X.post('chat/permission', { path: st.path, chat: st.id, id: e.id, choice }).catch(err => X.toast(err.message, { err: true }))
     return h('div', { class: 'ct-perm', role: 'alertdialog' },
-      h('div', { class: 'ph' }, svg('shield'), h('span', {}, T('Claude vrea să: ', 'Claude wants to: '), h('b', {}, e.title))),
-      e.detail ? h('pre', { class: 'ct-perm-input' }, e.detail) : null,
+      h('div', { class: 'ph' }, svg('shield'), h('span', {}, T('Claude vrea să: ', 'Claude wants to: '), h('b', {}, text(e.title)))),
+      e.detail ? h('pre', { class: 'ct-perm-input' }, text(e.detail)) : null,
       h('div', { class: 'ct-perm-btns' },
         h('button', { class: 'primary', type: 'button', onclick: () => answer('allow') }, T('Permite', 'Allow')),
         e.noAlways ? null : h('button', { class: 'secondary', type: 'button', onclick: () => answer('always') }, T('Mereu în acest chat', 'Always in this chat')),
         h('button', { class: 'secondary', type: 'button', onclick: () => answer('deny') }, T('Refuză', 'Deny'))))
   }
   if (e.type === 'error') {
-    const box = h('div', { class: 'ct-err' }, h('span', {}, e.text))
+    const box = h('div', { class: 'ct-err' }, h('span', {}, text(X.tr ? X.tr(e.text) : e.text)))
     if (e.needLogin) box.append(h('button', { class: 'primary', type: 'button', onclick: () => X.post('chat/login', {}).catch(err => X.toast(err.message, { err: true })) }, T('Conectează Claude', 'Connect Claude')))
     return box
   }
-  if (e.type === 'done' && e.stop === 'cancelled') return h('div', { class: 'ct-stopped' }, T('Oprit.', 'Stopped.'))
+  if (e.type === 'done') {
+    const box = h('div', { class: 'ct-done' })
+    if (e.stop === 'cancelled') box.append(h('div', { class: 'ct-stopped' }, T('Oprit.', 'Stopped.')))
+    if (e.note) box.append(h('div', { class: 'ct-note' }, text(e.note)))
+    if (e.files?.length) {
+      box.append(h('div', { class: 'ct-made' }, h('div', { class: 'muted' }, T('Fișiere făcute de Claude', 'Files made by Claude')),
+        ...e.files.map(f => h('div', { class: 'ct-made-row', title: f }, svg('file'), h('span', { class: 'tt' }, text(baseName(f))),
+          isPdf(f) ? h('button', { class: 'ct-act-btn', type: 'button', onclick: () => X.openDoc(f) }, T('Deschide', 'Open')) : null,
+          h('button', { class: 'ct-act-btn', type: 'button', onclick: () => X.post('chat/reveal', { chat: st.id, file: f }).catch(err => X.toast(err.message, { err: true })) }, T('Arată în folder', 'Show in folder'))))))
+    }
+    const answer = turnText(st, e.seq)
+    if (answer.trim()) box.append(h('div', { class: 'ct-actions' }, h('button', { class: 'icon', type: 'button', title: T('Copiază răspunsul', 'Copy answer'), onclick: () => copyText(answer) }, X.icon('copy'))))
+    return box.children.length ? box : null
+  }
   return null
 }
 
-export async function openChat(prefill) {
+// ---------- modelul și efortul (ca în CRM: ce oferă Claude Code, ținut minte pe calculator) ----------
+const effortName = o => (o.value === 'xhigh' ? 'Extra' : o.value === 'default' ? T('Implicit', 'Default') : o.name)
+function modelLabel(opts) {
+  const m = opts?.model
+  const cur = m?.options.find(o => o.value === m.current)
+  return cur ? (cur.value === 'default' ? T('Model implicit', 'Default model') : cur.name) : 'Model'
+}
+function modelMenu(anchor, opts, onPick) {
+  const { h } = X
+  const box = h('div', { class: 'cpop-body' })
+  if (!opts) box.append(h('div', { class: 'muted cpop-pad' }, h('span', { class: 'spin' }), T('Întreb Claude Code ce modele are…', 'Asking Claude Code for its models…')))
+  else {
+    if (opts.model) {
+      box.append(h('div', { class: 'cpop-head' }, 'Model'))
+      // ca în CRM: primele patru (cele mai noi) și cel ales; restul sub „Mai multe modele”
+      const all = opts.model.options
+      const few = all.length > 5 && !modelMenu.all ? all.filter((o, i) => i < 4 || o.value === opts.model.current) : all
+      for (const o of few) {
+        box.append(h('button', { class: `cpop-row${o.value === opts.model.current ? ' cur' : ''}`, type: 'button', title: o.description || '', onclick: () => { closePop(); if (o.value !== opts.model.current) onPick({ model: o.value }) } },
+          h('span', { class: 'grow' }, text(o.value === 'default' ? T('Implicit', 'Default') : o.name)), o.value === opts.model.current ? svg('check') : null))
+      }
+      if (few.length < all.length) box.append(h('button', { class: 'cpop-row muted', type: 'button', onclick: () => { modelMenu.all = true; modelMenu(anchor, opts, onPick); modelMenu.all = false } }, h('span', { class: 'grow' }, T('Mai multe modele…', 'More models…'))))
+    }
+    if (opts.effort?.options.length) {
+      box.append(h('div', { class: 'cpop-head' }, T('Efort', 'Effort'), info(T('Un efort mai mare dă răspunsuri mai atente, dar durează mai mult și consumă limita mai repede.', 'More effort gives more careful answers, but takes longer and uses up the limit faster.'))))
+      for (const o of opts.effort.options.filter(x => x.value !== 'default' || x.value === opts.effort.current)) {
+        box.append(h('button', { class: `cpop-row${o.value === opts.effort.current ? ' cur' : ''}`, type: 'button', onclick: () => { closePop(); if (o.value !== opts.effort.current) onPick({ effort: o.value }) } },
+          h('span', { class: 'grow' }, text(effortName(o)), o.value === 'max' ? h('span', { class: 'cc-badge' }, T('consum mare', 'heavy use')) : null),
+          o.value === opts.effort.current ? svg('check') : null))
+      }
+    }
+    if (!opts.model && !opts.effort) box.append(h('div', { class: 'muted cpop-pad' }, T('Claude Code nu oferă alegerea modelului aici.', 'Claude Code offers no model choice here.')))
+  }
+  return popover(anchor, box, { up: true, cls: 'cpop-model' })
+}
+
+// ---------- inelul cu limitele abonamentului ----------
+function until(ms) {
+  if (!ms) return ''
+  const m = Math.max(0, Math.round((ms - Date.now()) / 60000))
+  const hh = Math.floor(m / 60), mm = m % 60
+  if (hh >= 24) return T(`Se resetează în ${Math.floor(hh / 24)} zile ${hh % 24} h`, `Resets in ${Math.floor(hh / 24)} d ${hh % 24} h`)
+  return hh ? T(`Se resetează în ${hh} h ${mm} min`, `Resets in ${hh} h ${mm} min`) : T(`Se resetează în ${mm} min`, `Resets in ${mm} min`)
+}
+const limitRo = l => (l === '5-hour limit' ? 'Limita de 5 ore' : l.replace(/^Weekly · all models$/i, 'Săptămânal · toate modelele').replace(/^Weekly ·/i, 'Săptămânal ·'))
+function usageRing() {
+  const { h } = X
+  const btn = h('button', { class: 'icon cc-ring', type: 'button', hidden: true, title: T('Limitele abonamentului Claude', 'Claude plan limits') })
+  let data = null
+  const draw = () => {
+    const five = data?.limits.find(l => l.id === 'five_hour') || data?.limits[0]
+    btn.hidden = !five
+    if (!five) return
+    const p = Math.round(five.percent), c = 2 * Math.PI * 6.5
+    btn.className = `icon cc-ring${p >= 90 ? ' bad' : p >= 70 ? ' warn' : ''}`
+    btn.innerHTML = `<svg viewBox="0 0 18 18" class="ring"><circle cx="9" cy="9" r="6.5" class="bg"/><circle cx="9" cy="9" r="6.5" class="fg" stroke-dasharray="${(c * p) / 100} ${c}" transform="rotate(-90 9 9)"/></svg>`
+    btn.title = `${T(limitRo(five.label), five.label)}: ${p}%`
+  }
+  btn.addEventListener('click', () => {
+    if (!data) return
+    popover(btn, h('div', { class: 'cpop-body cpop-pad' },
+      data.plan ? h('div', { class: 'cpop-head' }, `Claude ${data.plan}`) : null,
+      ...data.limits.map(l => h('div', { class: 'lim' },
+        h('div', { class: 'lim-top' }, h('span', {}, T(limitRo(l.label), l.label)), h('b', {}, `${Math.round(l.percent)}%`)),
+        h('div', { class: `lim-bar${l.percent >= 90 ? ' bad' : l.percent >= 70 ? ' warn' : ''}` }, h('span', { style: { width: `${l.percent}%` } })),
+        h('div', { class: 'muted' }, until(l.resetsAt) || text(l.resetsText || ''))))), { cls: 'cpop-usage' })
+  })
+  btn.refresh = async force => {
+    try { data = await X.api('chat/usage', force ? { force: 1 } : {}) } catch { data = null }
+    draw()
+  }
+  return btn
+}
+
+// ---------- istoricul conversațiilor documentului ----------
+function historyMenu(anchor, path, activeId, open) {
+  const { h } = X
+  const search = h('input', { type: 'search', class: 'cpop-search', placeholder: T('Caută în conversații', 'Search chats') })
+  const rows = h('div', { class: 'cpop-list' }, h('div', { class: 'muted cpop-pad' }, h('span', { class: 'spin' })))
+  let all = []
+  const render = () => {
+    const q = search.value.trim().toLowerCase()
+    const list = all.filter(c => !q || c.title.toLowerCase().includes(q))
+    if (!list.length) return rows.replaceChildren(h('div', { class: 'muted cpop-pad' }, q ? T('Nimic găsit.', 'Nothing found.') : T('Nicio conversație încă despre acest PDF.', 'No chats about this PDF yet.')))
+    rows.replaceChildren(...list.map(c => {
+      const title = h('button', { class: 'hc-title', type: 'button', title: c.title, onclick: () => { closePop(); open(c.id) } },
+        c.starred ? svg('star') : null, h('span', { class: 'tt' }, text(c.title)), c.running ? h('span', { class: 'spin' }) : null, h('span', { class: 'muted hc-when' }, rel(c.updated)))
+      const row = h('div', { class: `hc-row${c.id === activeId ? ' cur' : ''}` }, title,
+        h('button', { class: 'icon', type: 'button', title: c.starred ? T('Scoate steaua', 'Unstar') : T('Cu stea (sus în listă)', 'Star (top of the list)'), onclick: async () => {
+          await X.post('chat/star', { chat: c.id, starred: !c.starred }).catch(err => X.toast(err.message, { err: true })); load()
+        } }, svg(c.starred ? 'starFill' : 'star')),
+        h('button', { class: 'icon', type: 'button', title: T('Redenumește', 'Rename'), onclick: () => {
+          const inp = h('input', { type: 'text', class: 'hc-rename', value: c.title, maxlength: '80' })
+          title.replaceWith(inp)
+          inp.focus(); inp.select()
+          const save = async () => { if (inp.value.trim() && inp.value.trim() !== c.title) await X.post('chat/rename', { chat: c.id, title: inp.value }).catch(err => X.toast(err.message, { err: true })); load() }
+          inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); save() } else if (e.key === 'Escape') { e.stopPropagation(); load() } })
+          inp.addEventListener('blur', save)
+        } }, svg('pencil')),
+        h('button', { class: 'icon', type: 'button', title: T('Șterge', 'Delete'), onclick: async () => {
+          if (!confirm(T(`Ștergi conversația „${c.title}”? Nu se mai poate recupera.`, `Delete the chat “${c.title}”? It cannot be recovered.`))) return
+          await X.post('chat/delete', { chat: c.id }).catch(err => X.toast(err.message, { err: true }))
+          chats.delete(c.id)
+          if (current.get(path.toLowerCase()) === c.id) current.delete(path.toLowerCase())
+          if (c.id === activeId) { closePop(); open(null) } else load()
+        } }, svg('trash')))
+      return row
+    }))
+  }
+  const load = async () => {
+    try { all = (await X.api('chat/list', { path })).chats } catch (err) { rows.replaceChildren(h('div', { class: 'result err' }, err.message)); return }
+    render()
+  }
+  search.addEventListener('input', render)
+  const el = popover(anchor, h('div', { class: 'cpop-body' }, search, rows), { cls: 'cpop-history' })
+  load()
+  search.focus()
+  return el
+}
+
+// ---------- atașamentele din compozitor ----------
+function readB64(file) {
+  return new Promise((ok, bad) => {
+    const r = new FileReader()
+    r.onload = () => ok(String(r.result).split(',')[1] || '')
+    r.onerror = () => bad(r.error)
+    r.readAsDataURL(file)
+  })
+}
+
+export async function openChat(prefill, { chat: want = null, fresh = false } = {}) {
   const { h } = X
   const path = X.path()
   if (!path) return X.toast(T('Deschide întâi un PDF.', 'Open a PDF first.'))
+  const key = path.toLowerCase()
   const my = ++poll
+  watch++
+  closePop()
   const list = h('div', { class: 'chat-thread', tabindex: '0' })
   const input = h('textarea', { rows: '2', placeholder: T('Întreabă orice…', 'Ask anything…') })
   const send = h('button', { class: 'cc-send', type: 'button', title: T('Trimite (Enter)', 'Send (Enter)') }, svg('send'))
   const mode = h('select', { class: 'cc-mode', title: T('Manual: întreabă mereu înainte de schimbări. Auto: Claude decide singur la acțiunile de rutină.', 'Manual: always asks before changes. Auto: Claude decides by itself on routine actions.') },
     h('option', { value: 'ask' }, 'Manual'), h('option', { value: 'auto' }, 'Auto'))
   mode.addEventListener('change', () => X.post('settings', { chatMode: mode.value }).catch(() => {}))
-  const composer = h('div', { class: 'chat-composer' }, input, h('div', { class: 'cc-foot' }, mode, send))
+  const fileIn = h('input', { type: 'file', multiple: true, hidden: true })
+  const attach = h('button', { class: 'icon cc-attach', type: 'button', title: T('Atașează fișiere (sau lipește / trage aici)', 'Attach files (or paste / drop here)') }, svg('clip'))
+  attach.addEventListener('click', () => fileIn.click())
+  let opts = null
+  const model = h('button', { class: 'cc-model', type: 'button', title: T('Modelul și efortul', 'Model and effort') }, h('span', { class: 'mn' }, 'Model'))
+  const showModel = () => {
+    const eff = opts?.effort?.options.find(o => o.value === opts.effort.current)
+    model.replaceChildren(h('span', { class: 'mn' }, text(modelLabel(opts))), eff && eff.value !== 'default' ? h('span', { class: 'me' }, text(effortName(eff))) : null)
+  }
+  model.addEventListener('click', async () => {
+    const pop = modelMenu(model, opts, pick)
+    if (!opts) {
+      try { opts = await X.api('chat/options') } catch (err) { opts = null; X.toast(err.message, { err: true }) }
+      showModel()
+      if (pop.isConnected) modelMenu(model, opts, pick)
+    }
+  })
+  async function pick(patch) {
+    try { opts = await X.post('chat/prefs', patch); showModel() } catch (err) { X.toast(T(`Nu am putut schimba: ${err.message}`, `Could not change it: ${err.message}`), { err: true }) }
+  }
+  const chips = h('div', { class: 'cc-chips', hidden: true })
+  const composer = h('div', { class: 'chat-composer' }, chips, input, h('div', { class: 'cc-foot' }, attach, fileIn, h('span', { class: 'grow' }), model, mode, send))
   composer.addEventListener('click', e => { if (e.target === composer) input.focus() })
   const body = h('div', { class: 'chat' }, list, composer)
   const d = X.openDrawer('Claude', body)
   d.dataset.kind = 'chat'
   document.querySelector('.rail [data-panel=chat]')?.classList.add('on')
+  document.querySelector('.rail [data-panel=chat]')?.classList.remove('attn')
   const head = d.querySelector('.dh')
+  const titleEl = h('button', { class: 'ct-title', type: 'button', title: T('Conversațiile acestui PDF', 'Chats about this PDF') })
   head.querySelector('h2').append(info(T('Claude vede PDF-ul deschis și pagina pe care ești. În modul Manual, orice schimbare îți cere acordul.',
-    'Claude sees the open PDF and the page you are on. In Manual mode, any change asks for your approval.')))
-  head.lastChild.before(
-    h('button', { class: 'icon', type: 'button', title: T('Conversație nouă', 'New chat'), onclick: () => reset() }, svg('fresh')),
+    'Claude sees the open PDF and the page you are on. In Manual mode, any change asks for your approval.')), titleEl)
+  const ring = usageRing()
+  const histBtn = h('button', { class: 'icon', type: 'button', title: T('Conversațiile acestui PDF', 'Chats about this PDF') }, svg('history'))
+  const openHistory = () => historyMenu(histBtn, path, st?.id, id => openChat(null, id ? { chat: id } : {}))
+  histBtn.addEventListener('click', openHistory)
+  titleEl.addEventListener('click', openHistory)
+  head.lastChild.before(ring, histBtn,
+    h('button', { class: 'icon', type: 'button', title: T('Conversație nouă', 'New chat'), onclick: () => openChat(null, { fresh: true }) }, svg('fresh')),
     h('button', { class: 'icon', type: 'button', title: T('Conexiuni (CRM)', 'Connections (CRM)'), onclick: () => openConnections() }, svg('plug')))
-  const st = chatState(path)
+  let st = null
+
+  // Atașamentele: alese, lipite (Ctrl+V) sau trase peste chat; se urcă imediat, pleacă odată cu mesajul.
+  const files = []
+  const drawChips = () => {
+    chips.hidden = !files.length
+    chips.replaceChildren(...files.map(f => h('span', { class: `cc-chip${f.busy ? ' busy' : ''}`, title: f.name },
+      f.thumb ? h('img', { src: f.thumb, alt: '' }) : svg('file'), h('span', { class: 'tt' }, text(f.name)), f.busy ? h('span', { class: 'spin' }) : null,
+      h('button', { type: 'button', class: 'x', title: T('Scoate', 'Remove'), onclick: () => { files.splice(files.indexOf(f), 1); if (f.thumb) URL.revokeObjectURL(f.thumb); drawChips() } }, '×'))))
+  }
+  async function addFiles(list2) {
+    for (const file of [...list2]) {
+      if (files.length >= MAX_FILES) { X.toast(T(`Cel mult ${MAX_FILES} fișiere într-un mesaj.`, `At most ${MAX_FILES} files in one message.`), { err: true }); break }
+      if (file.size > MAX_MB * 1024 * 1024) { X.toast(T(`${file.name} e prea mare (cel mult ${MAX_MB} MB).`, `${file.name} is too big (${MAX_MB} MB at most).`), { err: true }); continue }
+      const name = file.name || `captura-${Date.now()}.png`
+      const f = { name, busy: true, thumb: /^image\//.test(file.type) ? URL.createObjectURL(file) : '' }
+      files.push(f)
+      drawChips()
+      try {
+        const r = await X.post('chat/upload', { name, data: await readB64(file) })
+        Object.assign(f, { id: r.id, kind: r.kind, busy: false })
+      } catch (err) {
+        files.splice(files.indexOf(f), 1)
+        X.toast(err.message, { err: true })
+      }
+      drawChips()
+    }
+  }
+  fileIn.addEventListener('change', () => { addFiles(fileIn.files); fileIn.value = '' })
+  input.addEventListener('paste', e => { if (e.clipboardData?.files?.length) { e.preventDefault(); addFiles(e.clipboardData.files) } })
+  body.addEventListener('dragover', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); body.classList.add('drop') } })
+  body.addEventListener('dragleave', e => { if (!body.contains(e.relatedTarget)) body.classList.remove('drop') })
+  body.addEventListener('drop', e => { body.classList.remove('drop'); if (e.dataTransfer?.files?.length) { e.preventDefault(); addFiles(e.dataTransfer.files) } })
 
   // Derularea: lista urmărește răspunsul doar cât omul stă jos; dacă a urcat să citească, rămâne unde e.
   let pinned = true
@@ -254,7 +544,7 @@ export async function openChat(prefill) {
   const draw = e => {
     const old = list.querySelector(`[data-seq="${e.seq}"]`)
     const inner = old?.querySelector('pre')?.scrollTop || 0
-    const node = eventNode(e, path, st.running)
+    const node = eventNode(e, st, st.running)
     if (!node) return old?.remove()
     node.dataset.seq = e.seq
     node.dataset.type = e.type
@@ -266,19 +556,23 @@ export async function openChat(prefill) {
     }
     if (inner && node.querySelector('pre')) node.querySelector('pre').scrollTop = inner
   }
-  // Ce stă la coada firului și depinde de stare: „Se gândește…”, cursorul, copierea, reîncercarea, sugestiile.
+  const showTitle = () => {
+    titleEl.replaceChildren(text(st?.title || T('Conversație nouă', 'New chat')))
+  }
+  // Ce stă la coada firului și depinde de stare: „Se gândește…”, cursorul, reîncercarea, sugestiile.
   const decorate = () => {
     for (const n of list.querySelectorAll('.ct-extra')) n.remove()
-    const evs = [...st.events.values()]
+    const evs = eventsOf(st)
     const last = evs[evs.length - 1]
     const nodes = [...list.querySelectorAll('[data-seq]')]
     for (const n of nodes) n.classList.remove('streaming')
     // gândirea se vede doar cât e ultimul lucru din fir, în timpul răspunsului
     for (const n of nodes) if (n.dataset.type === 'thought' && !(st.running && last && +n.dataset.seq === last.seq)) n.remove()
+    showTitle()
     if (!evs.length) return empty()
     list.querySelector('.chat-empty')?.remove()
     input.placeholder = T('Răspunde…', 'Reply…')
-    const lastNode = list.querySelector('[data-seq]:last-of-type') || nodes[nodes.length - 1]
+    const lastNode = nodes[nodes.length - 1]
     if (st.running) {
       const asking = evs.some(e => e.type === 'perm' && e.state === 'ask')
       if (last.type === 'text') lastNode?.classList.add('streaming')
@@ -286,25 +580,19 @@ export async function openChat(prefill) {
       else if (asking) list.append(h('div', { class: 'ct-thinking ct-extra' }, h('span', { class: 'shimmer' }, T('Așteaptă răspunsul tău…', 'Waiting for your answer…'))))
       return
     }
-    // tura s-a terminat: acțiunile de sub ultimul răspuns
+    // tura s-a terminat: reîncercarea și sugestiile de sub ultimul răspuns (copierea e la fiecare răspuns)
     const iUser = evs.map(e => e.type).lastIndexOf('user')
     const turn = evs.slice(iUser + 1)
     const answer = turn.filter(e => e.type === 'text').map(e => e.text).join('\n\n')
     const failed = turn.some(e => e.type === 'error')
-    const stopped = turn.some(e => e.type === 'done' && e.stop === 'cancelled')
-    const { shown, follow } = splitFollowups(answer, false)
+    const stopped = turn.some(e => e.type === 'done' && e.stop !== 'end_turn')
+    const { follow } = splitFollowups(answer, false)
     const extra = h('div', { class: 'ct-extra' })
-    const acts = h('div', { class: 'ct-actions' })
-    if (shown.trim()) acts.append(h('button', { class: 'icon', type: 'button', title: T('Copiază răspunsul', 'Copy answer'), onclick: async () => {
-      try { await navigator.clipboard.writeText(shown); X.toast(T('Copiat', 'Copied')) } catch { X.toast(T('Nu am putut copia', 'Could not copy'), { err: true }) }
-    } }, X.icon('copy')))
-    if ((failed || stopped) && iUser >= 0) acts.append(h('button', { class: 'ct-act-btn', type: 'button', onclick: () => go(evs[iUser].text) }, svg('retry'), T('Reîncearcă', 'Retry')))
-    if (acts.children.length) extra.append(acts)
-    if (follow.length && !failed && !stopped) extra.append(h('div', { class: 'ct-follow' }, ...follow.map(f => h('button', { type: 'button', onclick: () => go(f) }, svg('reply'), h('span', {}, f)))))
+    if ((failed || stopped) && iUser >= 0) extra.append(h('div', { class: 'ct-actions' }, h('button', { class: 'ct-act-btn', type: 'button', onclick: () => go(evs[iUser].text) }, svg('retry'), T('Reîncearcă', 'Retry'))))
+    if (follow.length && !failed && !stopped) extra.append(h('div', { class: 'ct-follow' }, ...follow.map(f => h('button', { type: 'button', onclick: () => go(f) }, svg('reply'), h('span', {}, text(f))))))
     if (extra.children.length) list.append(extra)
   }
   const setRunning = on => {
-    st.running = on
     send.replaceChildren(svg(on ? 'stop' : 'send'))
     send.title = on ? T('Oprește', 'Stop') : T('Trimite (Enter)', 'Send (Enter)')
     send.classList.toggle('stop', on)
@@ -317,57 +605,62 @@ export async function openChat(prefill) {
       [T('Verifică sumele și datele', 'Check amounts and dates'), T('Verifică sumele, datele și numele din document: sunt consecvente?', 'Check the amounts, dates and names in the document: are they consistent?')]]
     list.append(h('div', { class: 'chat-empty' }, h('div', { class: 'ce-ico' }, svg('chat')), h('b', {}, T('Întreabă orice', 'Ask anything')),
       h('span', { class: 'muted' }, T('Despre PDF-ul deschis.', 'About the open PDF.')),
-      ...tips.map(([label, text]) => h('button', { class: 'ask-suggest', type: 'button', onclick: () => go(text) }, svg('reply'), h('span', {}, label)))))
+      ...tips.map(([label, t]) => h('button', { class: 'ask-suggest', type: 'button', onclick: () => go(t) }, svg('reply'), h('span', {}, label)))))
   }
+  const live = () => my === poll && d.isConnected && !d.hidden && d.dataset.kind === 'chat'
+  const take = r => keep(() => {
+    const was = st.running
+    apply(st, r)
+    setRunning(st.running)
+    for (const e of r.events) {
+      draw(e)
+      if (e.type === 'done' && e.docChanged) X.reload(T('Claude a schimbat documentul: l-am reîncărcat.', 'Claude changed the document: reloaded.'))
+    }
+    if (was && !st.running) {
+      for (const e of st.events.values()) if (e.type === 'tool') draw(e) // rotițele rămase se opresc
+      ring.refresh()
+    }
+    decorate()
+  })
   const loop = async () => {
-    while (my === poll && d.isConnected && !d.hidden && d.dataset.kind === 'chat') {
+    while (live()) {
       try {
-        const r = await X.api('chat/events', { path, since: st.seq, revs: JSON.stringify(st.revs), wait: 20, running: st.running ? 1 : 0 })
-        if (my !== poll) return
-        keep(() => {
-          if (r.last < st.seq) { st.seq = 0; st.revs = {}; st.events.clear(); list.replaceChildren() } // conversație nouă
-          const was = st.running
-          setRunning(r.running)
-          for (const e of r.events) {
-            st.events.set(e.seq, e)
-            st.revs[e.seq] = e.rev || 0
-            st.seq = Math.max(st.seq, e.seq)
-            draw(e)
-            if (e.type === 'done' && e.docChanged) X.reload(T('Claude a schimbat documentul: l-am reîncărcat.', 'Claude changed the document: reloaded.'))
-          }
-          if (was && !r.running) for (const e of st.events.values()) if (e.type === 'tool') draw(e) // rotițele rămase se opresc
-          decorate()
-        })
+        const r = await X.api('chat/events', { path, chat: st.id, since: st.seq, revs: JSON.stringify(st.revs), wait: 20, running: st.running ? 1 : 0, title: st.title })
+        if (!live()) break
+        if (r.chat !== st.id) { current.set(key, r.chat); return openChat(null, { chat: r.chat }) } // a fost ștearsă între timp
+        take(r)
       } catch {
-        await new Promise(r => setTimeout(r, 1500))
+        await new Promise(res => setTimeout(res, 1500))
       }
     }
+    if (my === poll && st.running) watchInBackground(st) // panoul s-a închis cât Claude lucrează: urmărim din fundal
   }
-  async function reset() {
-    await X.post('chat/reset', { path }).catch(() => {})
-    st.seq = 0; st.revs = {}; st.events.clear()
-    list.replaceChildren()
+  async function go(t) {
+    if (st.running) return // un singur mesaj o dată (ca în CRM): textul rămâne în casetă
+    const msg = (typeof t === 'string' ? t : input.value).trim()
+    const sent = typeof t === 'string' ? [] : files.filter(f => f.id)
+    if (files.some(f => f.busy)) return X.toast(T('Aștept să se încarce fișierele…', 'Waiting for the files to upload…'))
+    if (!msg && !sent.length) return
+    if (typeof t !== 'string') {
+      input.value = ''
+      input.style.height = ''
+      files.length = 0
+      drawChips()
+    }
     pinned = true
-    empty()
-    input.focus()
-  }
-  async function go(text) {
-    if (st.running) return typeof text === 'string' ? null : X.post('chat/cancel', { path }).catch(() => {})
-    text = (typeof text === 'string' ? text : input.value).trim()
-    if (!text) return
-    input.value = ''
-    input.style.height = ''
-    pinned = true
+    st.running = true
     keep(() => { setRunning(true); decorate() })
     try {
-      await X.post('chat/send', { path, text, page: X.state.cur })
+      await X.post('chat/send', { path, chat: st.id, text: msg, page: X.state.cur, files: sent.map(f => f.id) })
     } catch (err) {
+      st.running = false
       setRunning(false)
-      input.value = text
+      decorate()
+      if (typeof t !== 'string') { input.value = msg; files.push(...sent); drawChips() }
       X.toast(err.message, { err: true })
     }
   }
-  send.addEventListener('click', () => go())
+  send.addEventListener('click', () => (st?.running ? X.post('chat/cancel', { path, chat: st.id }).catch(() => {}) : go()))
   input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); go() } })
   input.addEventListener('input', () => { input.style.height = ''; input.style.height = `${Math.min(220, input.scrollHeight)}px` })
 
@@ -378,16 +671,62 @@ export async function openChat(prefill) {
   mode.value = status.mode === 'auto' ? 'auto' : 'ask'
   if (!status.available) {
     list.append(await chatSetup(status, () => openChat(prefill)))
-    input.disabled = send.disabled = mode.disabled = true
+    input.disabled = send.disabled = mode.disabled = attach.disabled = model.disabled = true
     return
   }
-  for (const e of st.events.values()) draw(e)
+  // Care conversație: cea cerută, una nouă, cea deschisă ultima dată pe acest PDF, altfel cea mai recentă.
+  try {
+    let id = want || (fresh ? (await X.post('chat/new', { path })).chat : current.get(key))
+    let first = null
+    if (!id) {
+      first = await X.api('chat/events', { path, since: 0, revs: '{}', wait: 0 })
+      id = first.chat
+    }
+    if (my !== poll) return
+    st = chatState(id, path)
+    current.set(key, id)
+    if (first && !st.seq) apply(st, first)
+  } catch (err) {
+    list.append(h('div', { class: 'result err' }, err.message))
+    return
+  }
+  for (const e of eventsOf(st)) draw(e)
   setRunning(st.running)
   decorate()
   list.scrollTop = list.scrollHeight
   loop()
+  ring.refresh()
+  X.api('chat/options').then(o => { opts = o; showModel() }).catch(() => {})
   if (prefill) { input.value = prefill; input.dispatchEvent(new Event('input')) }
   input.focus()
+  if (prefill) input.setSelectionRange(input.value.length, input.value.length)
+}
+
+// Panoul e închis, dar Claude încă lucrează: urmărim conversația din fundal și anunțăm cererile de acord și finalul.
+async function watchInBackground(st) {
+  const my = ++watch
+  const btn = document.querySelector('.rail [data-panel=chat]')
+  const reopen = { label: T('Deschide', 'Open'), fn: () => openChat(null, { chat: st.id }) }
+  const asked = new Set([...st.events.values()].filter(e => e.type === 'perm' && e.state === 'ask').map(e => e.id))
+  if (asked.size) btn?.classList.add('attn')
+  while (my === watch && st.running) {
+    let r
+    try { r = await X.api('chat/events', { path: st.path, chat: st.id, since: st.seq, revs: JSON.stringify(st.revs), wait: 20, running: 1 }) } catch { await new Promise(res => setTimeout(res, 3000)); continue }
+    if (my !== watch) return
+    apply(st, r)
+    for (const e of r.events) {
+      if (e.type === 'perm' && e.state === 'ask' && !asked.has(e.id)) {
+        asked.add(e.id)
+        btn?.classList.add('attn')
+        X.toast(T('Claude îți cere acordul în chat.', 'Claude is asking for your approval in the chat.'), { action: reopen, ms: 15000 })
+      }
+      if (e.type === 'done' && e.docChanged) X.reload(T('Claude a schimbat documentul: l-am reîncărcat.', 'Claude changed the document: reloaded.'))
+    }
+  }
+  if (my === watch) {
+    btn?.classList.add('attn')
+    X.toast(T('Claude a terminat de răspuns.', 'Claude has finished answering.'), { action: reopen })
+  }
 }
 
 // Pornirea chatului: motorul și legătura cu Claude se aduc singure (ca orice componentă); omul face un singur lucru,
@@ -454,6 +793,7 @@ async function openConnections() {
     } catch (err) { X.toast(err.message, { err: true }) }
   })
   poll++
+  closePop()
   X.openDrawer(T('Conexiuni', 'Connections'), body)
 }
 
@@ -599,9 +939,16 @@ export function init(ctx) {
   })
   rail.append(ctx.h('span', { class: 'rail-sep' }), b)
   document.addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'j') { e.preventDefault(); b.click() }
+    if (!((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'j')) return
+    e.preventDefault()
+    const d = ctx.$('#drawer')
+    const sel = window.getSelection()
+    const picked = sel && !sel.isCollapsed && !d.contains(sel.anchorNode) ? String(sel).trim().slice(0, 4000) : ''
+    const quote = picked.split('\n').map(l => l.trim()).filter(Boolean)
+    if (quote.length) return openChat(quote.map(l => `> ${l}`).join('\n') + '\n\n')
+    b.click()
   })
-  new MutationObserver(() => { const d = ctx.$('#drawer'); if (d.hidden || d.dataset.kind !== 'chat') b.classList.remove('on') })
+  new MutationObserver(() => { const d = ctx.$('#drawer'); if (d.hidden || d.dataset.kind !== 'chat') { b.classList.remove('on'); closePop() } })
     .observe(ctx.$('#drawer'), { attributes: true, attributeFilter: ['hidden', 'data-kind'] })
   // Ghidul de pornire e mereu la îndemână: butonul „?” din bara de sus.
   const help = ctx.h('button', { class: 'icon', id: 'btnHelp', type: 'button', title: T('Ghid de pornire', 'Getting started') }, svg('help'))

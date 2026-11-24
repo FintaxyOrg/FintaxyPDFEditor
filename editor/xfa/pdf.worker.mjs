@@ -54981,7 +54981,7 @@ class PDFDocument {
       const isSignature = isName(field.get("FT"), "Sig");
       const rectangle = field.get("Rect");
       const isInvisible = Array.isArray(rectangle) && rectangle.every(value => value === 0);
-      return isSignature && isInvisible;
+      return isSignature && (isInvisible || this.catalog.needsRendering);
     });
   }
   get _xfaStreams() {

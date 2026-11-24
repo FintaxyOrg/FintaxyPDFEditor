@@ -181,6 +181,77 @@ def main():
         check("fișierul semnat se vede tot ca formular (2 pagini)", info["xfaView"] and len(info["pages"]) == 2 and info["signed"], info.get("pages"))
     check("originalul nesemnat a rămas neatins", xfa.read_bytes() == original)
 
+    print("== semnătură vizibilă pe formularul XFA (ca în Acrobat) ==")
+    viz = folder / "xfa_vizibil.pdf"
+    viz.write_bytes(original)
+    # câmpul „semnatura” din șablon: x=250pt y=270pt în zona de conținut (36pt, 36pt), 200x60pt
+    res = certsign.sign_many("", [{"path": str(viz), "place": {"page": 1, "rect": [286, 306, 486, 352]}}], "Test", "")
+    if check("se semnează vizibil", res[0].get("ok"), res[0].get("error", "")):
+        out = Path(res[0]["out"])
+        v = validate(out)
+        check("semnătura vizibilă e validă", len(v) == 1 and v[0][2] and v[0][3], v)
+        pv = xfaview.preview(out)
+        if check("formularul se desenează și cu semnătură vizibilă (nu «Please wait»)", pv, xfaview._failed):
+            with fitz.open(pv) as d:
+                check("are tot cele două pagini ale formularului", d.page_count == 2, d.page_count)
+                hits = d[0].search_for("Semnat digital")
+                check("aspectul semnăturii e pus în caseta de semnătură a formularului",
+                      len(hits) == 1 and 270 < hits[0].x0 < 500 and 290 < hits[0].y0 < 380, hits)
+                check("textul formularului e tot acolo", "FORMULAR DE TEST XFA" in d[0].get_text())
+
+    print("== semnare vizibilă în caseta de semnătură a formularului (ca Acrobat) ==")
+    import xfasign
+    with fitz.open(xfa) as d:
+        names = [g["name"] for g in xfasign.fields(d)]
+    check("caseta de semnătură din șablon, cu numele SOM ca la Acrobat", names == ["form1[0].p1[0].semnatura[0]"], names)
+    check("editorul o oferă ca loc al semnăturii", [g["name"] for g in editor_server.doc_info(str(xfa))["xfaSigfields"]] == names,
+          editor_server.doc_info(str(xfa)).get("xfaSigfields"))
+    viz2 = folder / "xfa_caseta.pdf"
+    viz2.write_bytes(original)
+    check("semnarea în bloc («auto») alege caseta formularului", certsign.auto_place(str(viz2)) == {"xfa": names[0]},
+          certsign.auto_place(str(viz2)))
+    res = certsign.sign_many("", [{"path": str(viz2), "place": "auto"}], "Test", "")
+    if check("se semnează în caseta formularului", res[0].get("ok"), res[0].get("error", "")):
+        out = Path(res[0]["out"])
+        v = validate(out)
+        check("semnătura e validă și acoperă tot fișierul", len(v) == 1 and v[0][2] and v[0][3], v)
+        with fitz.open(out) as d:
+            sf = fx_sign.signature_fields(d)
+            check("câmpul are numele SOM, e vizibil și semnat", [(f["name"], f["visible"], f["signed"]) for f in sf]
+                  == [(names[0], True, True)], sf)
+            check("formularul XFA a rămas în fișier", fx_sign.is_xfa(d) and xfaview.needs(d))
+        check("originalul nesemnat a rămas neatins", viz2.read_bytes() == original)
+        check("caseta nu mai e oferită după semnare", editor_server.doc_info(str(out))["xfaSigfields"] == [])
+        pv = xfaview.preview(out)
+        if check("formularul semnat se desenează (nu «Please wait»)", pv, xfaview._failed):
+            with fitz.open(pv) as d:
+                hits = d[0].search_for("Digitally signed")
+                check("aspectul ca la Acrobat («Digitally signed by …»), în caseta formularului",
+                      len(hits) == 1 and 280 < hits[0].x0 < 500 and 300 < hits[0].y0 < 370, hits)
+        again = certsign.sign_many("", [{"path": str(out), "place": {"xfa": names[0]}}], "Test", "")
+        check("a doua semnare în aceeași casetă e refuzată", not again[0].get("ok") and "deja semnată" in again[0].get("error", ""),
+              again[0])
+
+    # Câmpul casetei există deja, gol (pus de Acrobat sau de pregătirea declarației): aspectul tot ca la Acrobat.
+    import io as _io
+    from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+    pre = folder / "xfa_camp_gol.pdf"
+    w = IncrementalPdfFileWriter(_io.BytesIO(original), strict=False)
+    xfasign.add_field(w, names[0], [286, 490, 486, 536])
+    buf = _io.BytesIO()
+    w.write(buf)
+    pre.write_bytes(buf.getvalue())
+    res = certsign.sign_many("", [{"path": str(pre), "place": {"xfa": names[0]}}], "Test", "")
+    if check("caseta cu câmpul deja pus se semnează", res[0].get("ok"), res[0].get("error", "")):
+        out = Path(res[0]["out"])
+        with fitz.open(out) as d:
+            sf = fx_sign.signature_fields(d)
+            check("tot un singur câmp, cel existent, acum semnat", [(f["name"], f["signed"]) for f in sf] == [(names[0], True)], sf)
+        pv = xfaview.preview(out)
+        with fitz.open(pv) as d:
+            hits = d[0].search_for("Digitally signed")
+        check("și aici aspectul e cel de la Acrobat, în caseta formularului", len(hits) == 1, hits)
+
     for p in extra:
         print(f"== {p.name} ==")
         with fitz.open(p) as d:
