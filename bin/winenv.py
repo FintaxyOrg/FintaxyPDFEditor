@@ -226,8 +226,8 @@ class CERT_CONTEXT(ctypes.Structure):
                 ("cbCertEncoded", wintypes.DWORD), ("pCertInfo", ctypes.c_void_p), ("hCertStore", ctypes.c_void_p)]
 
 
-def store_certs() -> list:
-    """Certificatele cu cheie privată din Cert:\\CurrentUser\\My, citite direct din Windows (instant):
+def store_certs(store_name: str = "MY") -> list:
+    """Certificatele cu cheie privată din Cert:\\CurrentUser\\My (sau alt depozit al utilizatorului, la teste), citite direct din Windows (instant):
     [{"thumb", "der", "friendly", "provider", "container"}]."""
     c32 = ctypes.WinDLL("crypt32", use_last_error=True)
     c32.CertOpenStore.restype = ctypes.c_void_p
@@ -237,7 +237,7 @@ def store_certs() -> list:
     c32.CertGetCertificateContextProperty.argtypes = [ctypes.POINTER(CERT_CONTEXT), wintypes.DWORD, ctypes.c_void_p,
                                                       ctypes.POINTER(wintypes.DWORD)]
     c32.CertCloseStore.argtypes = [ctypes.c_void_p, wintypes.DWORD]
-    store = c32.CertOpenStore(10, 0, None, 0x10000 | 0x8000, "MY")  # SYSTEM_W, CURRENT_USER | READONLY
+    store = c32.CertOpenStore(10, 0, None, 0x10000 | 0x8000, store_name)  # SYSTEM_W, CURRENT_USER | READONLY
     out = []
     if not store:
         return out
@@ -269,6 +269,145 @@ def store_certs() -> list:
     finally:
         c32.CertCloseStore(store, 0)
     return out
+
+
+# ---------- certificatele de pe carduri, aduse în Windows ----------
+# Windows copiază singur în Cert:\CurrentUser\My certificatele de pe cardul introdus (serviciul „Certificate
+# Propagation”), dar nu mereu: pentru cititorul virtual FintaxySign (stick-ul din birou) nu o face, iar un card cu
+# două certificate (unul expirat, unul reînnoit) nu apărea deloc în listă. Le citim direct de pe card, fără PIN și
+# fără ferestre, și le punem în Windows legate de cheia de pe card, ca după propagarea obișnuită.
+
+SC_KSP = "Microsoft Smart Card Key Storage Provider"
+
+
+class NCryptKeyName(ctypes.Structure):
+    _fields_ = [("pszName", wintypes.LPWSTR), ("pszAlgid", wintypes.LPWSTR), ("dwLegacyKeySpec", wintypes.DWORD),
+                ("dwFlags", wintypes.DWORD)]
+
+
+def _ncrypt():
+    nc = ctypes.WinDLL("ncrypt")
+    for fn in (nc.NCryptOpenStorageProvider, nc.NCryptOpenKey, nc.NCryptGetProperty, nc.NCryptFreeObject,
+               nc.NCryptEnumKeys, nc.NCryptFreeBuffer):
+        fn.restype = ctypes.c_long
+    nc.NCryptOpenStorageProvider.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_wchar_p, wintypes.DWORD]
+    nc.NCryptOpenKey.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p), ctypes.c_wchar_p, wintypes.DWORD, wintypes.DWORD]
+    nc.NCryptGetProperty.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_void_p, wintypes.DWORD,
+                                     ctypes.POINTER(wintypes.DWORD), wintypes.DWORD]
+    nc.NCryptFreeObject.argtypes = [ctypes.c_void_p]
+    nc.NCryptEnumKeys.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.POINTER(ctypes.POINTER(NCryptKeyName)),
+                                  ctypes.POINTER(ctypes.c_void_p), wintypes.DWORD]
+    nc.NCryptFreeBuffer.argtypes = [ctypes.c_void_p]
+    return nc
+
+
+def card_keys(reader_names=None) -> list:
+    """Cheile de pe cardurile din cititoare, fiecare cu certificatul ei: [{"reader", "container", "der"}].
+    Fără PIN și fără ferestre (NCRYPT_SILENT_FLAG); un card fără certificat pe cheie e sărit."""
+    nc = _ncrypt()
+    silent = 0x40
+    if reader_names is None:
+        reader_names = [r["name"] for r in readers() if r["card"]]
+    out = []
+    prov = ctypes.c_void_p()
+    if nc.NCryptOpenStorageProvider(ctypes.byref(prov), SC_KSP, 0):
+        return out
+    try:
+        for reader in reader_names:
+            names, state = [], ctypes.c_void_p()
+            try:
+                while True:
+                    p = ctypes.POINTER(NCryptKeyName)()
+                    if nc.NCryptEnumKeys(prov, "\\\\.\\" + reader + "\\", ctypes.byref(p), ctypes.byref(state), silent):
+                        break  # NTE_NO_MORE_ITEMS sau cardul nu răspunde
+                    names.append(p.contents.pszName)
+                    nc.NCryptFreeBuffer(p)
+            finally:
+                if state:
+                    nc.NCryptFreeBuffer(state)
+            for name in names:
+                key = ctypes.c_void_p()
+                if nc.NCryptOpenKey(prov, ctypes.byref(key), "\\\\.\\" + reader + "\\" + name, 0, silent):
+                    continue
+                try:
+                    n = wintypes.DWORD(0)
+                    if nc.NCryptGetProperty(key, "SmartCardKeyCertificate", None, 0, ctypes.byref(n), silent) or not n.value:
+                        continue
+                    buf = ctypes.create_string_buffer(n.value)
+                    if nc.NCryptGetProperty(key, "SmartCardKeyCertificate", buf, n.value, ctypes.byref(n), silent):
+                        continue
+                    out.append({"reader": reader, "container": name, "der": buf.raw[:n.value]})
+                finally:
+                    nc.NCryptFreeObject(key)
+    finally:
+        nc.NCryptFreeObject(prov)
+    return out
+
+
+def register_certs(keys: list, provider: str = SC_KSP, store_name: str = "MY") -> list:
+    """Pune certificatele în Cert:\\CurrentUser\\<store_name> legate de cheia lor (CERT_KEY_PROV_INFO), doar pe cele
+    care lipsesc sau n-au cheia legată. Întoarce amprentele SHA1 ale celor adăugate/reparate."""
+    known = {c["thumb"] for c in store_certs(store_name)}
+    c32 = ctypes.WinDLL("crypt32", use_last_error=True)
+    c32.CertOpenStore.restype = ctypes.c_void_p
+    c32.CertOpenStore.argtypes = [ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, ctypes.c_wchar_p]
+    c32.CertAddEncodedCertificateToStore.argtypes = [ctypes.c_void_p, wintypes.DWORD, ctypes.c_char_p, wintypes.DWORD,
+                                                     wintypes.DWORD, ctypes.POINTER(ctypes.POINTER(CERT_CONTEXT))]
+    c32.CertSetCertificateContextProperty.argtypes = [ctypes.POINTER(CERT_CONTEXT), wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p]
+    c32.CertFreeCertificateContext.argtypes = [ctypes.POINTER(CERT_CONTEXT)]
+    c32.CertCloseStore.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+    import hashlib
+    todo = [k for k in keys if hashlib.sha1(k["der"]).hexdigest().upper() not in known]
+    if not todo:
+        return []
+    store = c32.CertOpenStore(10, 0, None, 0x10000, store_name)  # SYSTEM_W, CURRENT_USER (scriere)
+    if not store:
+        return []
+    done = []
+    try:
+        for k in todo:
+            ctx = ctypes.POINTER(CERT_CONTEXT)()
+            # X509_ASN_ENCODING | PKCS_7_ASN_ENCODING; CERT_STORE_ADD_USE_EXISTING: dacă e deja (fără cheie), îl reparăm
+            if not c32.CertAddEncodedCertificateToStore(store, 0x10001, k["der"], len(k["der"]), 2, ctypes.byref(ctx)):
+                continue
+            try:
+                info = CRYPT_KEY_PROV_INFO(k["container"], provider, 0, 0, 0, None, 0)  # dwProvType 0 = CNG
+                if c32.CertSetCertificateContextProperty(ctx, 2, 0, ctypes.byref(info)):
+                    done.append(hashlib.sha1(k["der"]).hexdigest().upper())
+            finally:
+                c32.CertFreeCertificateContext(ctx)
+    finally:
+        c32.CertCloseStore(store, 0)
+    return done
+
+
+# Cardurile se întreabă pe rând (două întrebări deodată pe același card se încurcă), iar stick-ul de la distanță
+# răspunde în 5-15 s: citirea cardurilor merge în fundal, lista de certificate o așteaptă cel mult câteva secunde.
+_CARD_LOCK = threading.Lock()
+_SYNC = {"thread": None, "t": 0.0, "added": []}
+
+
+def _sync_worker():
+    added = []
+    try:
+        with _CARD_LOCK:
+            keys = card_keys()
+        added = register_certs(keys)
+    except Exception:
+        pass
+    _SYNC.update(thread=None, t=time.time(), added=added)
+
+
+def sync_card_certs(wait: float = 0.0, fresh: bool = False) -> dict:
+    """Aduce în Windows certificatele de pe carduri (în fundal, cel mult o dată la 30 s, sau acum dacă `fresh`).
+    Așteaptă cel mult `wait` secunde. {"running": încă citește, "added": amprentele adăugate ultima dată}."""
+    th = _SYNC["thread"]
+    if th is None and (fresh or time.time() - _SYNC["t"] > 30):
+        th = _SYNC["thread"] = threading.Thread(target=_sync_worker, daemon=True)
+        th.start()
+    if th is not None and wait > 0:
+        th.join(wait)
+    return {"running": _SYNC["thread"] is not None, "added": list(_SYNC["added"])}
 
 
 def _reader_of(provider: str, container: str) -> dict:
@@ -320,7 +459,8 @@ def _probe_worker():
         res = {"reader": "", "present": False}
         for attempt in range(2):  # cardul ocupat o clipă de alt program: mai încercăm o dată
             try:
-                res = _reader_of(provider, container)
+                with _CARD_LOCK:
+                    res = _reader_of(provider, container)
             except Exception:
                 res = {"reader": "", "present": False}
             if res["present"]:

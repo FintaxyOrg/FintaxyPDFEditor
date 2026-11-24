@@ -107,6 +107,12 @@ def list_certs(fresh: bool = False) -> list:
     Fiecare spune de unde vine (buletin, stick prin FintaxySign, token) și ce PIN cere."""
     src = {}
     try:
+        # Întâi aducem în Windows certificatele de pe carduri pe care Windows nu le-a pus singur (stick-ul FintaxySign,
+        # al doilea certificat de pe card). La „Reîncarcă” așteptăm stick-ul; altfel doar puțin, restul în fundal.
+        winenv.sync_card_certs(wait=8.0 if fresh else 2.5, fresh=fresh)
+    except Exception:
+        pass
+    try:
         certs, raw = _native_certs()
         src = winenv.key_sources(raw, wait=6.0 if fresh else 2.5, fresh=fresh)
     except Exception:
