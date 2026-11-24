@@ -2246,7 +2246,7 @@ function heartbeat() {
 ;(async () => {
   if (TOKEN) S.app = { ...S.app, ...(await api('info').catch(() => ({}))) }
   applyLang()
-  initAssist({ h, $, api, post, url, toast, icon, tr, openDrawer, closeDrawer, openUpload, state: S, path: () => S.doc?.path || PATH,
+  initAssist({ h, $, api, post, url, toast, icon, tr, openDrawer, closeDrawer, openUpload, openDoc, state: S, path: () => S.doc?.path || PATH,
     reload: async msg => { if (!changed().length) { await openDoc(PATH, S.cur); toast(msg) } } })
   // Ghidul de la prima pornire (se poate sări; se redeschide din Ctrl+K → „Ghid de pornire”).
   if (TOKEN && !S.app.onboarded && Q.get('onboarding') !== '0') openOnboarding()

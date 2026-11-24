@@ -26,7 +26,15 @@ ADAPTER_PKG = "@agentclientprotocol/claude-agent-acp"
 ADAPTER_VERSION = "0.94.0"  # aceeași versiune ca în Fintaxy CRM
 ACP_DIR = STATE / "acp"
 PROTOCOL_VERSION = 1
-APP_VERSION = "0.15.0"  # doar ca etichetă a clientului ACP
+
+
+def app_version() -> str:
+    """Versiunea aplicației (eticheta clientului ACP)."""
+    try:
+        import desktop
+        return desktop.app_version() or "0"
+    except Exception:
+        return "0"
 
 
 # ---------------------------------------------------------------- ce e instalat
@@ -174,7 +182,7 @@ def child_env() -> dict:
         if re.search(r"(?i)(SECRET|PASSWORD|PASSWD|API_KEY|APIKEY|_TOKEN$|PRIVATE_KEY)", k):
             continue
         env[k] = v
-    env.update(CLAUDE_AGENT_SDK_CLIENT_APP=f"fintaxy-pdf-sign/{APP_VERSION}", CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION="false",
+    env.update(CLAUDE_AGENT_SDK_CLIENT_APP=f"fintaxy-pdf-sign/{app_version()}", CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION="false",
                DISABLE_AUTOUPDATER="1")
     return env
 
@@ -198,6 +206,9 @@ class Agent:
         self.caps = {}
         self.stderr_tail = []
         self.last_error = ""
+        self.configs = {}      # model -> configOptions (modelul și efortul pe care le oferă Claude Code)
+        self.rate = {}         # tip limită -> ultimul eveniment de limită primit în timpul unei ture
+        self.usage_cache = None
 
     def alive(self) -> bool:
         return bool(self.proc and self.proc.poll() is None)
@@ -222,12 +233,106 @@ class Agent:
                 init = self.request("initialize", {
                     "protocolVersion": PROTOCOL_VERSION,
                     "clientCapabilities": {"fs": {"readTextFile": False, "writeTextFile": False}, "terminal": False},
-                    "clientInfo": {"name": "fintaxy-pdf-sign", "title": "PDF Sign (Fintaxy)", "version": APP_VERSION},
+                    "clientInfo": {"name": "fintaxy-pdf-sign", "title": "PDF Sign (Fintaxy)", "version": app_version()},
                 }, timeout=60)
             except Exception as err:
                 self.stop()
                 raise AcpError(f"Claude Code nu a pornit: {err}") from None
             self.caps = init.get("agentCapabilities") or {}
+            threading.Thread(target=self._sweep, args=(self.proc,), daemon=True).start()
+
+    def session_caps(self) -> dict:
+        return self.caps.get("sessionCapabilities") or {}
+
+    def close_session(self, sid: str):
+        """Închide o sesiune la adaptor (Claude Code își eliberează memoria); transcrierea rămâne pe disc pentru reluare."""
+        if not sid:
+            return
+        self.sessions.pop(sid, None)
+        if "close" in self.session_caps() and self.alive():
+            try:
+                self.request("session/close", {"sessionId": sid}, timeout=10)
+            except AcpError:
+                pass
+
+    def live_chats(self) -> list:
+        return [c for c in set(self.sessions.values()) if isinstance(c, Chat)]
+
+    def make_room(self, keep):
+        """Cel mult LIVE_MAX sesiuni deschise deodată: o închidem pe cea folosită cel mai demult (se reia la nevoie)."""
+        live = [c for c in self.live_chats() if c is not keep and not c.running]
+        while len(live) + 1 > LIVE_MAX and live:
+            old = min(live, key=lambda c: c.last_used)
+            live.remove(old)
+            self.close_session(old.session_id)
+
+    def _sweep(self, p):
+        """Sesiunile nefolosite de IDLE_SECONDS se închid (ca în CRM); conversația se reia cu session/resume."""
+        while self.proc is p and p.poll() is None:
+            time.sleep(60)
+            for c in self.live_chats():
+                if not c.running and time.time() - c.last_used > IDLE_SECONDS:
+                    self.close_session(c.session_id)
+
+    def note_rate(self, info):
+        if isinstance(info, dict) and info.get("rateLimitType"):
+            self.rate[info["rateLimitType"]] = info
+
+    def note_config(self, options, fresh=False):
+        if not isinstance(options, list) or not options:
+            return
+        model = (select_of(options, "model") or {}).get("currentValue")
+        if fresh and "" not in self.configs:
+            self.configs[""] = options
+        if model:
+            self.configs[str(model)] = options
+
+    def complete(self, prompt: str, system: str = "", model: str = "", timeout: float = 180) -> str:
+        """O întrebare de-o tură pe o sesiune temporară, fără unelte și fără conexiuni (titluri, /usage)."""
+        self.start()
+        options = {"settingSources": [], "strictMcpConfig": True, "promptSuggestions": False, "tools": [],
+                   "allowDangerouslySkipPermissions": False}
+        if model:
+            options["model"] = model
+        meta = {"systemPrompt": system if system else {"append": ""}, "claudeCode": {"options": options}}
+        res = self.request("session/new", {"cwd": str(STATE), "mcpServers": [], "_meta": meta}, timeout=120)
+        sid = res["sessionId"]
+        if not model:
+            self.note_config(res.get("configOptions"), fresh=True)
+        temp = _Temp()
+        self.sessions[sid] = temp
+        try:
+            self.request("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": prompt}]}, timeout=timeout)
+            return temp.text.strip()
+        except AcpError:
+            try:
+                self.notify("session/cancel", {"sessionId": sid})
+            except AcpError:
+                pass
+            raise
+        finally:
+            self.close_session(sid)
+
+    def config_for(self, model: str = "") -> list:
+        """Opțiunile (model, efort) pentru un model ('' = cele ale unei sesiuni noi), dintr-o sesiune scurtă dacă nu le știm."""
+        if model in self.configs:
+            return self.configs[model]
+        self.start()
+        meta = {"systemPrompt": {"append": ""}, "claudeCode": {"options": {"settingSources": [], "strictMcpConfig": True, "tools": []}}}
+        res = self.request("session/new", {"cwd": str(STATE), "mcpServers": [], "_meta": meta}, timeout=120)
+        try:
+            self.note_config(res.get("configOptions"), fresh=True)
+            opts = res.get("configOptions") or []
+            cur = select_of(opts, "model")
+            if model and cur and cur.get("currentValue") != model and any(o["value"] == model for o in flat_options(cur)):
+                r = self.request("session/set_config_option", {"sessionId": res["sessionId"], "configId": "model", "value": model}, timeout=30)
+                if isinstance(r.get("configOptions"), list):
+                    opts = r["configOptions"]
+                    self.note_config(opts)
+            self.configs.setdefault(model, opts)
+            return opts
+        finally:
+            self.close_session(res["sessionId"])
 
     def stop(self):
         with self.lock:
@@ -467,53 +572,132 @@ def permission_detail(name: str, raw) -> str:
 
 FOLLOWUPS = re.compile(r"<followups>.*", re.S)
 KEEP = ("user", "text", "tool", "plan", "error", "done")  # ce rămâne în istoricul salvat
+CHAT_DIR = STATE / "chats"
+FILES_DIR = STATE / "chat-files"
+LIVE_MAX = 4               # sesiuni ACP deschise deodată (ca în CRM)
+IDLE_SECONDS = 15 * 60     # o sesiune nefolosită atâta timp se închide (se reia când omul scrie iar)
+FORCE_STOP = 3             # secunde după Oprește: dacă agentul nu încheie tura, o încheiem noi
+IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
+MAX_FILE = 20 * 1024 * 1024
+STOP_TEXT = {  # (română, engleză)
+    "refusal": ("Claude a refuzat această cerere.", "Claude declined this request."),
+    "max_tokens": ("Răspunsul a fost prea lung și s-a oprit. Cere-i să continue.", "The answer was too long and stopped. Ask it to continue."),
+    "max_turn_requests": ("Claude a făcut prea mulți pași la rând. Cere-i să continue.", "Claude took too many steps in a row. Ask it to continue."),
+}
+
+
+def select_of(options, cid: str):
+    return next((o for o in options or [] if isinstance(o, dict) and o.get("id") == cid and o.get("type") == "select"), None)
+
+
+def flat_options(opt) -> list:
+    out = []
+    for o in (opt or {}).get("options") or []:
+        out += o["options"] if isinstance(o, dict) and isinstance(o.get("options"), list) else [o]
+    return [{"value": o["value"], "name": str(o.get("name") or o["value"]), **({"description": str(o["description"])} if o.get("description") else {})}
+            for o in out if isinstance(o, dict) and isinstance(o.get("value"), str)]
+
+
+class _Temp:
+    """Sesiunea unei întrebări de-o tură (complete()): contează doar textul."""
+
+    def __init__(self):
+        self.text = ""
+
+    def on_update(self, u: dict):
+        if u.get("sessionUpdate") == "agent_message_chunk" and (u.get("content") or {}).get("type") == "text":
+            self.text += u["content"].get("text", "")
+        elif u.get("sessionUpdate") == "usage_update":
+            AGENT.note_rate((u.get("_meta") or {}).get("_claude/rateLimit"))
+
+    def on_permission(self, rid, params):
+        AGENT.respond(rid, {"outcome": {"outcome": "cancelled"}})
+
+    def agent_gone(self, why):
+        pass
+
+
+def _now() -> int:
+    return int(time.time() * 1000)
+
+
+def _first_title(text: str) -> str:
+    return _clip(re.sub(r"\s+", " ", text).strip(), 80)
 
 
 class Chat:
-    def __init__(self, path: str):
+    def __init__(self, cid: str, path: str):
+        self.id = cid
         self.path = str(Path(path))
+        self.title, self.title_source, self.starred = "", "", False
+        self.created = self.updated = _now()
         self.session_id = None
+        self.session_sig = None
+        self.no_resume = False
+        self.replaying = False
         self.events = []          # tot ce s-a întâmplat, numerotat: editorul cere „ce e nou după N”
         self.cond = threading.Condition()
         self.running = False
         self.cancelled = False
+        self.turn_id = 0
         self.perms = {}           # id din chat -> {"rid", "options", "event", "tool"}
         self.tools = {}           # toolCallId -> {"ev", "name", "raw", "title"}
+        self.written = set()      # fișierele scrise de Claude în tura asta
         self.plan_ev = None
-        self.always = set()       # „Mereu în acest chat”, pe unealtă
-        self.mcp_sig = None
+        self.always = set()       # „Mereu în acest chat”, pe unealtă (păstrat în fișier)
         self.modes = []
         self.mode_id = "default"
-        self.needs_context = False  # sesiune nouă peste un istoric vechi: îi spunem lui Claude ce s-a vorbit
-        import hashlib
-        self.file = STATE / "chats" / (hashlib.sha1(self.path.lower().encode("utf-8")).hexdigest()[:20] + ".json")
-        self._load()
+        self.config = []          # ce oferă sesiunea: model, efort
+        self.last_used = time.time()
+        self.file = CHAT_DIR / f"{cid}.json"
 
     # ---- istoricul, păstrat între porniri
-    def _load(self):
+    def _load(self, saved: dict):
+        self.title = str(saved.get("title") or "")
+        self.title_source = str(saved.get("titleSource") or "")
+        self.starred = bool(saved.get("starred"))
+        self.created = int(saved.get("created") or 0) or _now()
+        self.session_id = saved.get("sessionId") or None
+        self.session_sig = saved.get("sessionSig")
+        self.always = set(saved.get("always") or [])
+        for e in saved.get("events") or []:
+            if e.get("type") in KEEP:
+                e = {**e, "seq": len(self.events) + 1, "closed": True}
+                e.pop("rev", None)
+                if e["type"] == "tool" and e.get("status") not in ("completed", "failed"):
+                    e["status"] = "stopped"
+                self.events.append(e)
         try:
-            saved = json.loads(self.file.read_text(encoding="utf-8"))
-            for e in saved.get("events") or []:
-                if e.get("type") in KEEP:
-                    e = {**e, "seq": len(self.events) + 1, "closed": True}
-                    e.pop("rev", None)
-                    if e["type"] == "tool" and e.get("status") not in ("completed", "failed"):
-                        e["status"] = "stopped"
-                    self.events.append(e)
-            self.needs_context = bool(self.events)
-        except (OSError, ValueError):
-            pass
+            mtime = int(self.file.stat().st_mtime * 1000)
+        except OSError:
+            mtime = self.created
+        self.updated = int(saved.get("updated") or 0) or mtime
+        if not self.title:
+            first = next((e.get("text", "") for e in self.events if e["type"] == "user"), "")
+            self.title, self.title_source = _first_title(first), "first"
 
     def _save(self):
+        if not any(e["type"] == "user" for e in self.events):
+            return
         try:
-            self.file.parent.mkdir(parents=True, exist_ok=True)
+            CHAT_DIR.mkdir(parents=True, exist_ok=True)
             keep = [{k: v for k, v in e.items() if k not in ("rev", "closed")} for e in self.events if e["type"] in KEEP][-400:]
-            self.file.write_text(json.dumps({"path": self.path, "events": keep}, ensure_ascii=False), encoding="utf-8")
+            data = {"id": self.id, "path": self.path, "title": self.title, "titleSource": self.title_source, "starred": self.starred,
+                    "created": self.created, "updated": self.updated, "sessionId": self.session_id, "sessionSig": self.session_sig,
+                    "always": sorted(self.always), "events": keep}
+            tmp = self.file.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, self.file)
         except OSError:
             pass
 
+    def meta(self) -> dict:
+        return {"id": self.id, "title": self.title or ("New chat" if _english() else "Conversație nouă"), "starred": self.starred,
+                "updated": self.updated, "created": self.created, "running": self.running,
+                "questions": sum(1 for e in self.events if e["type"] == "user")}
+
     def _history_text(self) -> str:
-        """Ultimele schimburi, ca text, pentru o sesiune nouă (după repornire sau schimbarea conexiunilor)."""
+        """Ultimele schimburi, ca text, pentru o sesiune nouă (când Claude Code nu o mai poate relua)."""
         turns, q, a = [], None, ""
         for e in self.events[:-1]:  # fără mesajul tocmai trimis
             if e["type"] == "user":
@@ -522,14 +706,16 @@ class Chat:
                 q, a = e.get("text", ""), ""
             elif e["type"] == "text":
                 a += e.get("text", "")
+            elif e["type"] == "error":
+                a += " (failed)"
         if q is not None:
             turns.append((q, a))
         if not turns:
             return ""
         lines = ["Earlier in this conversation (for context):"]
         for q, a in turns[-12:]:
-            lines.append(f"Person: {_clip(q, 800)}")
-            lines.append(f"You: {_clip(FOLLOWUPS.sub('', a), 1500)}")
+            lines.append(f"Person: {_clip(q, 4000)}")
+            lines.append(f"You: {_clip(FOLLOWUPS.sub('', a), 6000)}")
         return "\n".join(lines) + "\n\n"
 
     # ---- evenimente către editor
@@ -554,16 +740,18 @@ class Chat:
                     ev["closed"] = True
                     break
 
-    def since(self, seq: int, revs: dict, wait: float = 25.0, running=None) -> dict:
+    def since(self, seq: int, revs: dict, wait: float = 25.0, running=None, title=None) -> dict:
         """Evenimentele noi (și cele care s-au schimbat între timp); așteaptă până apare ceva.
-        running = ce crede editorul că se întâmplă: dacă tura s-a terminat (sau a început) între timp, răspundem
-        imediat, altfel butonul ar rămâne pe „Oprește” până la următorul eveniment."""
+        running / title = ce crede editorul: dacă tura s-a terminat (sau a început) ori titlul s-a schimbat între timp,
+        răspundem imediat, altfel butonul ar rămâne pe „Oprește” până la următorul eveniment."""
         end = time.time() + wait
         with self.cond:
             while True:
                 out = [e for e in self.events if e["seq"] > seq or e.get("rev", 0) > int(revs.get(str(e["seq"]), 0))]
-                if out or time.time() >= end or (running is not None and running != self.running):
-                    return {"ok": True, "events": out, "running": self.running, "last": len(self.events)}
+                if (out or time.time() >= end or (running is not None and running != self.running)
+                        or (title is not None and title != self.title)):
+                    return {"ok": True, "events": out, "running": self.running, "last": len(self.events), "chat": self.id,
+                            "title": self.title}
                 self.cond.wait(max(0.05, min(1.0, end - time.time())))
 
     def touch(self, ev: dict, **changes):
@@ -583,27 +771,42 @@ class Chat:
             t["ev"] = self.emit("tool", id=tid, title=describe_tool(name, t["title"], raw), status=u.get("status") or "pending",
                                 kind=u.get("kind") or "other")
             self.tools[tid] = t
-            return t
-        changes = {}
-        if name:
-            t["name"] = name
-        if raw:
-            t["raw"] = raw
-        if u.get("title"):
-            t["title"] = u["title"]
-        title = describe_tool(t["name"], t["title"], t["raw"])
-        if title != t["ev"].get("title"):
-            changes["title"] = title
-        if u.get("status") and u["status"] != t["ev"].get("status"):
-            changes["status"] = u["status"]
-        if changes:
-            self.touch(t["ev"], **changes)
+        else:
+            changes = {}
+            if name:
+                t["name"] = name
+            if raw:
+                t["raw"] = raw
+            if u.get("title"):
+                t["title"] = u["title"]
+            title = describe_tool(t["name"], t["title"], t["raw"])
+            if title != t["ev"].get("title"):
+                changes["title"] = title
+            if u.get("status") and u["status"] != t["ev"].get("status"):
+                changes["status"] = u["status"]
+            if changes:
+                self.touch(t["ev"], **changes)
+        if t["ev"].get("status") == "completed" and t["name"] in ("Write", "Edit", "MultiEdit") and isinstance(t["raw"], dict):
+            f = t["raw"].get("file_path") or t["raw"].get("path")
+            if f:
+                self.written.add(str(Path(f)))
         return t
 
     def on_update(self, u: dict):
-        if not self.running:
-            return  # istoric redat sau un rest după oprire
         kind = u.get("sessionUpdate")
+        if kind == "config_option_update":
+            if isinstance(u.get("configOptions"), list):
+                self.config = u["configOptions"]
+                AGENT.note_config(self.config)
+            return
+        if kind == "usage_update":
+            AGENT.note_rate((u.get("_meta") or {}).get("_claude/rateLimit"))
+            return
+        if kind == "current_mode_update":
+            self.mode_id = u.get("currentModeId") or self.mode_id
+            return
+        if not self.running or self.replaying:
+            return  # istoric redat sau un rest după oprire
         content = u.get("content") or {}
         if kind == "agent_message_chunk":
             if content.get("type") == "text" and content.get("text"):
@@ -624,13 +827,13 @@ class Chat:
     def on_permission(self, rid, params: dict):
         options = params.get("options") or []
         tc = params.get("toolCall") or {}
+        if not self.running or self.cancelled or self.replaying:
+            return AGENT.respond(rid, {"outcome": {"outcome": "cancelled"}})
         t = self._tool(tc) if tc.get("toolCallId") else {"name": tool_name(tc), "raw": tc.get("rawInput"), "title": tc.get("title") or ""}
         name = t["name"] or t["title"] or "tool"
         allow = next((o for o in options if o.get("kind") == "allow_once"), None) or next(
             (o for o in options if o.get("kind") == "allow_always"), None)
-        if not self.running or self.cancelled:
-            return AGENT.respond(rid, {"outcome": {"outcome": "cancelled"}})
-        if name in self.always and allow:
+        if name in self.always and allow and name not in TERMINAL:
             return AGENT.respond(rid, {"outcome": {"outcome": "selected", "optionId": allow["optionId"]}})
         self.close_text()
         ev = self.emit("perm", id=f"p{len(self.events) + 1}", title=describe_tool(t["name"], t["title"], t["raw"]),
@@ -650,7 +853,7 @@ class Chat:
             return next((o for k in kinds for o in opts if o.get("kind") == k), None)
         if choice in ("allow", "always"):
             o = pick("allow_once", "allow_always")
-            if choice == "always":
+            if choice == "always" and p["tool"] not in TERMINAL:
                 self.always.add(p["tool"])
         else:
             o = pick("reject_once", "reject_always")
@@ -660,8 +863,9 @@ class Chat:
         return True
 
     def agent_gone(self, why: str):
-        self.session_id = None
+        # sesiunea rămâne în fișier: la următorul mesaj se reia (session/resume), dacă Claude Code o mai are
         if self.running:
+            self.turn_id += 1
             self.emit("error", text=why)
             self._finish()
 
@@ -672,6 +876,7 @@ class Chat:
         self.close_text()
         self.tools.clear()
         self.plan_ev = None
+        self.last_used = time.time()
         self._save()
         with self.cond:
             self.running = False
@@ -679,11 +884,15 @@ class Chat:
 
     # ---- către adaptor
     def ensure_session(self, mcp: list, user_settings: bool) -> bool:
-        """Sesiunea ACP a documentului; True dacă a fost creată acum (atunci Claude nu știe ce s-a vorbit înainte)."""
+        """Sesiunea ACP a conversației; True dacă e nouă (atunci Claude nu știe ce s-a vorbit înainte)."""
         AGENT.start()
+        self.last_used = time.time()
         sig = json.dumps([mcp, user_settings], sort_keys=True)
-        if self.session_id and self.session_id in AGENT.sessions and sig == self.mcp_sig:
-            return False
+        if self.session_id and AGENT.sessions.get(self.session_id) is self:
+            if sig == self.session_sig:
+                return False
+            AGENT.close_session(self.session_id)  # conexiunile s-au schimbat: sesiune nouă, cu istoricul ca text
+        AGENT.make_room(self)
         pages = 0
         try:
             import fitz
@@ -700,14 +909,37 @@ class Chat:
         servers = [{"type": "http", "name": m["name"], "url": m["url"],
                     "headers": ([{"name": "Authorization", "value": f"Bearer {m['token']}"}] if m.get("token") else [])}
                    for m in mcp if m.get("name") and m.get("url")]
-        res = AGENT.request("session/new", {"cwd": str(Path(self.path).parent), "mcpServers": servers, "_meta": meta}, timeout=120)
+        params = {"cwd": str(Path(self.path).parent), "mcpServers": servers, "_meta": meta}
+        sc = AGENT.session_caps()
+        if self.session_id and sig == self.session_sig and not self.no_resume and ("resume" in sc or AGENT.caps.get("loadSession")):
+            # aceeași conversație în Claude Code, fără s-o mai trimitem ca text (resume nu o redă; load o redă și o ignorăm)
+            self.replaying = True
+            try:
+                method = "session/resume" if "resume" in sc else "session/load"
+                AGENT.sessions[self.session_id] = self
+                res = AGENT.request(method, {"sessionId": self.session_id, **params}, timeout=120)
+                self._note(res)
+                return False
+            except AcpError:
+                AGENT.sessions.pop(self.session_id, None)
+            finally:
+                self.replaying = False
+        self.no_resume = False
+        res = AGENT.request("session/new", params, timeout=120)
         self.session_id = res["sessionId"]
-        self.mcp_sig = sig
+        self.session_sig = sig
         AGENT.sessions[self.session_id] = self
-        modes = res.get("modes") or {}
-        self.modes = [m.get("id") for m in modes.get("availableModes") or []]
-        self.mode_id = modes.get("currentModeId") or "default"
+        self._note(res, fresh=True)
         return True
+
+    def _note(self, res: dict, fresh=False):
+        if isinstance(res.get("configOptions"), list):
+            self.config = res["configOptions"]
+            AGENT.note_config(self.config, fresh=fresh)
+        modes = res.get("modes") or {}
+        if modes.get("availableModes"):
+            self.modes = [m.get("id") for m in modes["availableModes"]]
+        self.mode_id = modes.get("currentModeId") or self.mode_id
 
     def apply_mode(self, mode: str):
         """Manual = fiecare schimbare cere acord (modul „default” al lui Claude Code). Auto = Claude decide singur la
@@ -722,32 +954,90 @@ class Chat:
             except AcpError:
                 pass
 
-    def send(self, text: str, page: int, mcp: list, user_settings: bool, images: list | None = None, mode: str = "ask"):
+    def apply_prefs(self, prefs: dict):
+        """Modelul și efortul alese în compozitor (ținute minte în setări), dacă Claude Code le oferă. Întâi modelul:
+        nivelurile de efort depind de el."""
+        for cid in ("model", "effort"):
+            want = (prefs or {}).get(cid)
+            opt = select_of(self.config, cid)
+            if not want or not opt or opt.get("currentValue") == want or not any(o["value"] == want for o in flat_options(opt)):
+                continue
+            try:
+                r = AGENT.request("session/set_config_option", {"sessionId": self.session_id, "configId": cid, "value": want}, timeout=30)
+                if isinstance(r.get("configOptions"), list):
+                    self.config = r["configOptions"]
+                    AGENT.note_config(self.config)
+                else:
+                    self.config = [{**o, "currentValue": want} if o.get("id") == cid else o for o in self.config]
+            except AcpError:
+                pass
+
+    def send(self, text: str, page: int, mcp: list, user_settings: bool, files: list | None = None, mode: str = "ask",
+             prefs: dict | None = None):
+        files = files or []
+        if not text and files:
+            text = "Look at the attached file." if _english() else "Uită-te la fișierul atașat."
+        if not text:
+            raise AcpError("Write a message." if _english() else "Scrie un mesaj.")
         with self.cond:
             if self.running:
                 raise AcpError("Claude încă răspunde la mesajul dinainte. Așteaptă sau apasă Oprește.")
             self.running, self.cancelled = True, False
-        self.emit("user", text=text, page=page)
-        threading.Thread(target=self._turn, args=(text, page, mcp, user_settings, images or [], mode), daemon=True).start()
+            self.turn_id += 1
+            my = self.turn_id
+        if not self.title:
+            self.title, self.title_source = _first_title(text), "first"
+        self.updated = _now()
+        self.emit("user", text=text, page=page, files=[{"name": f["name"], "kind": f["kind"]} for f in files])
+        threading.Thread(target=self._turn, args=(my, text, page, mcp, user_settings, files, mode, prefs or {}), daemon=True).start()
 
-    def _turn(self, text, page, mcp, user_settings, images, mode):
+    def _blocks(self, body: str, files: list) -> list:
+        blocks = [{"type": "text", "text": body}]
+        can_image = (AGENT.caps.get("promptCapabilities") or {}).get("image")
+        for f in files:
+            mime = IMAGE_TYPES.get(Path(f["path"]).suffix.lower())
+            if mime and can_image:
+                try:
+                    import base64
+                    data = Path(f["path"]).read_bytes()
+                    if len(data) <= 5 * 1024 * 1024:
+                        blocks.append({"type": "image", "mimeType": mime, "data": base64.b64encode(data).decode("ascii")})
+                except OSError:
+                    pass
+        return blocks
+
+    def _turn(self, my, text, page, mcp, user_settings, files, mode, prefs):
+        ok = False
         try:
             before = self._mtime()
+            self.written = set()
             fresh = self.ensure_session(mcp, user_settings)
             self.apply_mode(mode)
-            context = self._history_text() if (fresh and self.needs_context) or (fresh and len(self.events) > 1) else ""
-            self.needs_context = False
-            body = f"{context}[PDF: {self.path} · pagina curentă: {page}]\n\n{text}"
-            for img in images:  # capturile de zonă: Claude le citește de pe disc
-                body += f"\nCaptură: {img}"
-            res = AGENT.request("session/prompt", {"sessionId": self.session_id, "prompt": [{"type": "text", "text": body}]}, timeout=None)
+            self.apply_prefs(prefs)
+            context = self._history_text() if fresh and len(self.events) > 1 else ""
+            body = f"{context}[PDF: {self.path} · current page: {page}]\n\n{text}"
+            if files:
+                body += "\n\nAttached files (on disk; read them if needed):\n" + "\n".join(f"- {f['path']}" for f in files)
+            res = AGENT.request("session/prompt", {"sessionId": self.session_id, "prompt": self._blocks(body, files)}, timeout=None)
+            if my != self.turn_id:
+                return
             self.close_text()
-            self.emit("done", stop=res.get("stopReason") or "end_turn", docChanged=self._mtime() != before)
+            stop = res.get("stopReason") or "end_turn"
+            if self.cancelled:
+                stop = "cancelled"
+            note = STOP_TEXT.get(stop)
+            made = sorted(f for f in self.written if os.path.isfile(f) and not _same(f, self.path))
+            self.emit("done", stop=stop, docChanged=self._mtime() != before, files=made,
+                      note=(note[1] if _english() else note[0]) if note else "")
+            ok = stop == "end_turn"
         except Exception as err:
-            if not self.cancelled:
+            if my != self.turn_id:
+                return
+            if self.cancelled:
+                self.emit("done", stop="cancelled", docChanged=False)
+            else:
                 msg = str(err)
-                said = " ".join(e.get("text", "") for e in self.events[-3:] if e["type"] == "text")
-                if re.search(r"(?i)authenticat|oauth|/login|not logged in|credential", msg + " " + said):
+                if re.search(r"(?i)authenticat|oauth|/login|not logged in|credential", msg):
                     # Claude Code nu e conectat (sau conectarea a expirat): editorul arată butonul „Conectează Claude”.
                     self.session_id = None
                     self.emit("error", needLogin=True,
@@ -757,10 +1047,21 @@ class Chat:
                     if AGENT.last_error and "s-a oprit" in msg:
                         msg += f" ({AGENT.last_error})"
                     self.emit("error", text=msg)
-            else:
-                self.emit("done", stop="cancelled", docChanged=False)
         finally:
-            self._finish()
+            if my == self.turn_id:
+                self._finish()
+                if ok and self.title_source in ("", "first") and sum(1 for e in self.events if e["type"] == "user") == 1:
+                    threading.Thread(target=self._auto_title, daemon=True).start()
+
+    def _auto_title(self):
+        q = next((e.get("text", "") for e in self.events if e["type"] == "user"), "")
+        a = FOLLOWUPS.sub("", " ".join(e.get("text", "") for e in self.events if e["type"] == "text"))
+        title = make_title(q, a)
+        if title and self.title_source != "user":
+            self.title, self.title_source = title, "auto"
+            self._save()
+            with self.cond:
+                self.cond.notify_all()
 
     def _mtime(self):
         try:
@@ -772,6 +1073,7 @@ class Chat:
         if not self.running:
             return
         self.cancelled = True
+        my = self.turn_id
         for pid in list(self.perms):
             p = self.perms.pop(pid)
             AGENT.respond(p["rid"], {"outcome": {"outcome": "cancelled"}})
@@ -783,39 +1085,286 @@ class Chat:
                 pass
 
         def force():
-            # Dacă agentul nu se oprește singur în câteva secunde, îl oprim noi: editorul nu rămâne niciodată blocat.
-            time.sleep(8)
-            if self.running and self.cancelled:
-                AGENT.stop()
+            # Agentul nu a încheiat tura: o încheiem noi (editorul nu rămâne blocat), fără să oprim celelalte
+            # conversații; următorul mesaj merge pe o sesiune nouă, cu istoricul ca text.
+            time.sleep(FORCE_STOP)
+            if self.running and self.cancelled and self.turn_id == my:
+                self.turn_id += 1
+                sid = self.session_id
+                self.session_id, self.no_resume = None, True
+                AGENT.sessions.pop(sid, None)
+                self.emit("done", stop="cancelled", docChanged=False)
+                self._finish()
+                threading.Thread(target=AGENT.close_session, args=(sid,), daemon=True).start()
         threading.Thread(target=force, daemon=True).start()
 
-    def reset(self):
+    def close(self):
+        """Conversația iese din memorie (ștearsă): oprim tura și închidem sesiunea."""
         self.cancel()
-        sid, self.session_id = self.session_id, None
-        AGENT.sessions.pop(sid, None)
-        with self.cond:
-            self.events.clear()
-            self.tools.clear()
-            self.always.clear()
-            self.plan_ev = None
-            self.needs_context = False
-            self.cond.notify_all()
+        self.turn_id += 1
+        if self.running:
+            self._finish()
+        if self.session_id:
+            threading.Thread(target=AGENT.close_session, args=(self.session_id,), daemon=True).start()
+        self.session_id = None
+
+
+# ---------------------------------------------------------------- titlurile, ca în CRM
+
+TITLE_SYSTEM = ("You name chat conversations. Reply with only a short title of 3 to 6 words for the conversation, in the "
+                "language of the person's question (Romanian when unsure). No quotes, no final period, no emoji.")
+FILLER = re.compile(r"(?i)\b(te rog|vă rog|va rog|please|poți|poti|can you|could you|aș vrea|as vrea|i want to|vreau să|vreau sa)\b[,:]?\s*")
+
+
+def heuristic_title(q: str) -> str:
+    t = re.sub(r"https?://\S+|\S+@\S+", "", q)
+    t = FILLER.sub("", t)
+    t = re.sub(r"\s+", " ", t).strip(" ?!.,:;")
+    return _clip(t[:1].upper() + t[1:], 60) if t else ""
+
+
+def make_title(q: str, a: str) -> str:
+    """Un titlu de 3-6 cuvinte (Claude Code, modelul rapid); altfel primele cuvinte ale întrebării, curățate."""
+    try:
+        out = AGENT.complete(f"Question: {_clip(q, 1500)}\n\nAnswer: {_clip(a, 1500)}\n\nTitle:", system=TITLE_SYSTEM,
+                             model="haiku", timeout=60)
+        line = next((ln for ln in out.splitlines() if ln.strip()), "")
+        line = re.sub(r"(?i)^title\s*:\s*", "", line).strip().strip('"„”“*#').rstrip(".")
+        if 1 <= len(line.split()) <= 10:
+            return _clip(line, 60)
+    except Exception:
+        pass
+    return heuristic_title(q)
+
+
+# ---------------------------------------------------------------- limitele abonamentului (inelul din chat)
+
+LIMIT_ID = {"5-hour limit": "five_hour", "weekly · all models": "seven_day"}
+EVENT_LABEL = {"five_hour": "5-hour limit", "seven_day": "Weekly · all models", "seven_day_opus": "Weekly · Opus",
+               "seven_day_sonnet": "Weekly · Sonnet"}
+MONTHS = {m: i for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
+
+
+def parse_reset(s: str, now: float | None = None):
+    """„Nov 11, 3:59 PM GMT+2” (fără an, cum scrie /usage) → momentul în ms, următorul după acum."""
+    import datetime as dt
+    m = re.match(r"(?i)\s*([a-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)?\s*\(?(?:(?:GMT|UTC)([+-]\d{1,2})(?::?(\d{2}))?)?",
+                 s or "")
+    if not m or m.group(1).lower() not in MONTHS:
+        return None
+    hour = int(m.group(3))
+    if m.group(5):
+        hour = hour % 12 + (12 if m.group(5).lower() == "pm" else 0)
+    if m.group(6):
+        sign = -1 if m.group(6).startswith("-") else 1
+        tz = dt.timezone(dt.timedelta(hours=int(m.group(6)), minutes=sign * int(m.group(7) or 0)))
+    else:
+        tz = dt.datetime.now().astimezone().tzinfo
+    now_dt = dt.datetime.fromtimestamp(now if now is not None else time.time(), tz)
+    for y in (now_dt.year, now_dt.year + 1):
         try:
-            self.file.unlink(missing_ok=True)
-        except OSError:
+            d = dt.datetime(y, MONTHS[m.group(1).lower()], int(m.group(2)), hour, int(m.group(4) or 0), tzinfo=tz)
+        except ValueError:
+            continue
+        if d.timestamp() > now_dt.timestamp() - 24 * 3600:
+            return int(d.timestamp() * 1000)
+    return None
+
+
+def parse_usage(md: str) -> tuple:
+    text = str(md or "")
+    pm = re.search(r"Claude (.+?) subscription usage", text)
+    plan = re.sub(r"\\(.)", r"\1", pm.group(1)) if pm else None
+    limits = []
+    for m in re.finditer(r"\*\*([^*\n]+?)\*\*\s*\S\s*\*\*(\d+(?:\.\d+)?)%\*\*(?:\s*·\s*Resets\s+([^\n]+))?", text):
+        label = re.sub(r"\\(.)", r"\1", m.group(1)).strip()
+        key = label.lower()
+        lid = LIMIT_ID.get(key) or "seven_day:" + re.sub(r"^weekly\s*·\s*", "", key)
+        rt = (m.group(3) or "").strip() or None
+        limits.append({"id": lid, "label": label, "percent": max(0.0, min(100.0, float(m.group(2)))),
+                       "resetsAt": parse_reset(rt) if rt else None, "resetsText": rt})
+    return plan, limits
+
+
+def limits_from_events() -> list:
+    out = []
+    for kind, info in AGENT.rate.items():
+        u = info.get("utilization")
+        if kind not in EVENT_LABEL or not isinstance(u, (int, float)):
+            continue
+        pct = u * 100 if u <= 1 else u
+        r = info.get("resetsAt")
+        out.append({"id": kind, "label": EVENT_LABEL[kind], "percent": round(max(0, min(100, pct))),
+                    "resetsAt": int(r * 1000 if r < 1e12 else r) if isinstance(r, (int, float)) else None, "resetsText": None})
+    return sorted(out, key=lambda x: x["id"] != "five_hour")
+
+
+_USAGE_LOCK = threading.Lock()
+
+
+def usage(force: bool = False) -> dict:
+    """Limitele abonamentului: /usage din Claude Code (o comandă locală, fără model) pe o sesiune scurtă, ținut un minut."""
+    c = AGENT.usage_cache
+    if not force and c and time.time() - c[0] < 60:
+        return c[1]
+    with _USAGE_LOCK:
+        c = AGENT.usage_cache
+        if not force and c and time.time() - c[0] < 60:
+            return c[1]
+        plan, limits = None, []
+        try:
+            plan, limits = parse_usage(AGENT.complete("/usage", timeout=30))
+        except Exception:
             pass
+        if not limits:
+            limits = limits_from_events()
+        data = {"ok": True, "available": bool(limits), "plan": plan, "limits": limits}
+        AGENT.usage_cache = (time.time(), data)
+        return data
 
 
-CHATS: dict = {}
+def options(prefs: dict) -> dict:
+    """Ce poate alege omul în compozitor: modelele și nivelurile de efort oferite de Claude Code, cu alegerea lui."""
+    base = AGENT.config_for("")
+    m = select_of(base, "model")
+    model_opts = flat_options(m)
+    model = prefs.get("model") if any(o["value"] == prefs.get("model") for o in model_opts) else (m or {}).get("currentValue")
+    cfg = AGENT.config_for(str(model)) if model and m and model != m.get("currentValue") else base
+    e = select_of(cfg, "effort")
+    effort_opts = flat_options(e)
+    effort = prefs.get("effort") if any(o["value"] == prefs.get("effort") for o in effort_opts) else (e or {}).get("currentValue")
+    return {"ok": True, "model": {"current": model, "options": model_opts} if m else None,
+            "effort": {"current": effort, "options": effort_opts} if e else None}
+
+
+# ---------------------------------------------------------------- conversațiile, câte mai multe pe document
+
+CHATS: dict = {}            # id -> Chat
 _CHATS_LOCK = threading.Lock()
+_LOADED = [False]
 
 
-def chat_for(path: str) -> Chat:
-    key = str(Path(path)).lower()
+def _load_all():
+    if _LOADED[0]:
+        return
+    _LOADED[0] = True
+    for f in sorted(CHAT_DIR.glob("*.json")) if CHAT_DIR.is_dir() else []:
+        try:
+            saved = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not saved.get("path"):
+            continue
+        cid = str(saved.get("id") or f.stem)  # fișierele vechi (o conversație pe PDF) nu au id: e numele fișierului
+        c = Chat(cid, saved["path"])
+        c.file = f
+        c._load(saved)
+        CHATS[cid] = c
+
+
+def _same(a: str, b: str) -> bool:
+    return os.path.normcase(str(Path(a))) == os.path.normcase(str(Path(b)))
+
+
+def chats_for(path: str) -> list:
     with _CHATS_LOCK:
-        if key not in CHATS:
-            CHATS[key] = Chat(path)
-        return CHATS[key]
+        _load_all()
+        mine = [c for c in CHATS.values() if _same(c.path, path) and (c.events or c.running)]
+    mine.sort(key=lambda c: (not c.starred, -c.updated))
+    return [c.meta() for c in mine]
+
+
+def new_chat(path: str) -> Chat:
+    import uuid
+    with _CHATS_LOCK:
+        _load_all()
+        c = Chat(uuid.uuid4().hex[:16], path)
+        CHATS[c.id] = c
+        return c
+
+
+def chat_for(path: str, cid: str | None = None) -> Chat:
+    """Conversația cerută (după id) sau, fără id, cea mai recentă a documentului (una nouă dacă nu are)."""
+    with _CHATS_LOCK:
+        _load_all()
+        if cid:
+            c = CHATS.get(cid)
+            if c and _same(c.path, path):
+                return c
+            if c:
+                raise AcpError("Conversația e a altui document.")
+        mine = [c for c in CHATS.values() if _same(c.path, path)]
+    if not cid and mine:
+        return max(mine, key=lambda c: (bool(c.events), c.updated))
+    return new_chat(path)
+
+
+def get_chat(cid: str) -> Chat:
+    with _CHATS_LOCK:
+        _load_all()
+        c = CHATS.get(cid)
+    if not c:
+        raise AcpError("Conversația nu mai există.")
+    return c
+
+
+def rename(cid: str, title: str):
+    c = get_chat(cid)
+    title = re.sub(r"\s+", " ", str(title or "")).strip()[:80]
+    if not title:
+        raise AcpError("Scrie un nume.")
+    c.title, c.title_source = title, "user"
+    c._save()
+    with c.cond:
+        c.cond.notify_all()
+
+
+def star(cid: str, on: bool):
+    c = get_chat(cid)
+    c.starred = bool(on)
+    c._save()
+
+
+def delete(cid: str):
+    c = get_chat(cid)
+    c.close()
+    with _CHATS_LOCK:
+        CHATS.pop(cid, None)
+    try:
+        c.file.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def save_upload(name: str, data: bytes) -> dict:
+    """Un fișier atașat în chat (lipit, tras sau ales): stă în folderul aplicației până îl citește Claude."""
+    import uuid
+    if len(data) > MAX_FILE:
+        raise AcpError("The file is too big (20 MB at most)." if _english() else "Fișierul e prea mare (cel mult 20 MB).")
+    name = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "_", Path(str(name or "fisier")).name).strip(" .") or "fisier"
+    fid = uuid.uuid4().hex[:12]
+    d = FILES_DIR / fid
+    d.mkdir(parents=True, exist_ok=True)
+    (d / name).write_bytes(data)
+    kind = "image" if Path(name).suffix.lower() in IMAGE_TYPES else "file"
+    return {"id": f"{fid}/{name}", "name": name, "kind": kind}
+
+
+def upload_path(fid: str) -> dict:
+    p = (FILES_DIR / str(fid)).resolve()
+    if FILES_DIR.resolve() not in p.parents or not p.is_file():
+        raise AcpError("Fișierul atașat nu mai există.")
+    return {"path": str(p), "name": p.name, "kind": "image" if p.suffix.lower() in IMAGE_TYPES else "file"}
+
+
+def written_file(cid: str, f: str) -> str:
+    """Un fișier pe care Claude l-a scris în conversația asta (doar pe acestea le deschidem din chat)."""
+    c = get_chat(cid)
+    for e in c.events:
+        if e["type"] == "done" and any(_same(x, f) for x in e.get("files") or []):
+            if os.path.isfile(f):
+                return str(Path(f))
+    raise AcpError("Fișierul nu mai există.")
 
 
 def shutdown():

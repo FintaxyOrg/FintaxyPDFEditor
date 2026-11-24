@@ -1026,10 +1026,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.json(st)
             if path == "/api/chat/events":
                 import acp_chat
-                chat = acp_chat.chat_for(q["path"])
+                chat = acp_chat.chat_for(q["path"], q.get("chat") or None)
                 revs = json.loads(q.get("revs") or "{}")
                 known = {"1": True, "0": False}.get(q.get("running"))
-                return self.json(chat.since(int(q.get("since") or 0), revs, wait=float(q.get("wait") or 25), running=known))
+                return self.json(chat.since(int(q.get("since") or 0), revs, wait=float(q.get("wait") or 25), running=known,
+                                            title=q.get("title")))
+            if path == "/api/chat/list":
+                import acp_chat
+                return self.json({"ok": True, "chats": acp_chat.chats_for(q["path"])})
+            if path == "/api/chat/options":
+                import acp_chat
+                import desktop
+                cfg = desktop.settings()
+                return self.json(acp_chat.options({"model": cfg.get("chatModel"), "effort": cfg.get("chatEffort")}))
+            if path == "/api/chat/usage":
+                import acp_chat
+                return self.json(acp_chat.usage(force=q.get("force") == "1"))
             if path == "/api/stirling/tools":
                 return self.json(Stirling.tools())
             if path == "/api/stirling/certs":
@@ -1195,20 +1207,59 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 import acp_chat
                 import desktop
                 cfg = desktop.settings()
-                chat = acp_chat.chat_for(b["path"])
+                chat = acp_chat.chat_for(b["path"], b.get("chat") or None)
+                files = [acp_chat.upload_path(f) for f in (b.get("files") or [])[:5]]
                 chat.send(str(b.get("text") or "").strip(), int(b.get("page") or 1), cfg.get("mcp") or [],
-                          bool(cfg.get("chatUserSettings")), b.get("images") or [], cfg.get("chatMode") or "ask")
-                return self.json({"ok": True})
+                          bool(cfg.get("chatUserSettings")), files, cfg.get("chatMode") or "ask",
+                          {"model": cfg.get("chatModel"), "effort": cfg.get("chatEffort")})
+                return self.json({"ok": True, "chat": chat.id})
             if path == "/api/chat/permission":
                 import acp_chat
-                return self.json({"ok": acp_chat.chat_for(b["path"]).answer(b["id"], b.get("choice") or "deny")})
+                return self.json({"ok": acp_chat.chat_for(b["path"], b.get("chat") or None).answer(b["id"], b.get("choice") or "deny")})
             if path == "/api/chat/cancel":
                 import acp_chat
-                acp_chat.chat_for(b["path"]).cancel()
+                acp_chat.chat_for(b["path"], b.get("chat") or None).cancel()
                 return self.json({"ok": True})
-            if path == "/api/chat/reset":
+            if path in ("/api/chat/new", "/api/chat/reset"):
+                # „Conversație nouă”: cea veche rămâne în istoric (ca în CRM), cu tura ei, dacă mai rulează
                 import acp_chat
-                acp_chat.chat_for(b["path"]).reset()
+                return self.json({"ok": True, "chat": acp_chat.new_chat(b["path"]).id})
+            if path == "/api/chat/rename":
+                import acp_chat
+                acp_chat.rename(b["chat"], b.get("title"))
+                return self.json({"ok": True})
+            if path == "/api/chat/star":
+                import acp_chat
+                acp_chat.star(b["chat"], bool(b.get("starred")))
+                return self.json({"ok": True})
+            if path == "/api/chat/delete":
+                import acp_chat
+                acp_chat.delete(b["chat"])
+                return self.json({"ok": True})
+            if path == "/api/chat/upload":
+                import acp_chat
+                import base64
+                return self.json({"ok": True, **acp_chat.save_upload(b.get("name"), base64.b64decode(b.get("data") or ""))})
+            if path == "/api/chat/prefs":
+                # modelul și efortul din compozitor; alt model = efortul lui implicit
+                import desktop
+                cfg = desktop.settings()
+                ch = {}
+                if "model" in b:
+                    ch["chatModel"] = str(b["model"] or "")
+                    if ch["chatModel"] != (cfg.get("chatModel") or ""):
+                        ch["chatEffort"] = ""
+                if "effort" in b:
+                    ch["chatEffort"] = str(b["effort"] or "")
+                desktop.save_settings(**ch)
+                import acp_chat
+                cfg = desktop.settings()
+                return self.json(acp_chat.options({"model": cfg.get("chatModel"), "effort": cfg.get("chatEffort")}))
+            if path == "/api/chat/reveal":
+                # un fișier scris de Claude în conversație: PDF-ul se deschide în editor (din pagină), restul în Explorer
+                import acp_chat
+                f = acp_chat.written_file(b["chat"], str(b.get("file") or ""))
+                subprocess.Popen(["explorer.exe", f"/select,{f}"])
                 return self.json({"ok": True})
             if path == "/api/chat/setup":
                 import acp_chat
@@ -1297,9 +1348,10 @@ def send_ai(app, c: dict, path: str, items: list) -> dict:
         if (app or desktop.current_ai()) == "chat":
             import acp_chat
             cfg = desktop.settings()
+            capture = [{"path": c["capture"], "name": Path(c["capture"]).name, "kind": "image"}] if c.get("capture") else []
             acp_chat.chat_for(path).send(desktop.message(c, str(Path(path))), int(c.get("page") or 1), cfg.get("mcp") or [],
-                                         bool(cfg.get("chatUserSettings")), [c["capture"]] if c.get("capture") else [],
-                                         cfg.get("chatMode") or "ask")
+                                         bool(cfg.get("chatUserSettings")), capture, cfg.get("chatMode") or "ask",
+                                         {"model": cfg.get("chatModel"), "effort": cfg.get("chatEffort")})
             desktop.save_settings(ai="chat")
             sent = {"app": "chat", "name": desktop.APP_BY_ID["chat"]["name"], "note": "Am trimis comentariul în chatul cu Claude."}
         else:
