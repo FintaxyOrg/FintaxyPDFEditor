@@ -427,6 +427,12 @@ class Signing extends XFAObject {"""),
     if (buffer) {
       buffer = fxFixBmp(buffer);
     }"""),
+    # 9. o semnătură VIZIBILĂ pe un formular XFA dinamic nu-l face formular AcroForm: Acrobat desenează tot formularul
+    #    și pune semnătura în câmpul ei; pdf.js renunța la XFA (rămânea pagina „Please wait…”)
+    ("""      const isInvisible = Array.isArray(rectangle) && rectangle.every(value => value === 0);
+      return isSignature && isInvisible;""",
+     """      const isInvisible = Array.isArray(rectangle) && rectangle.every(value => value === 0);
+      return isSignature && (isInvisible || this.catalog.needsRendering);"""),
 ]
 
 

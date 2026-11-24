@@ -181,6 +181,24 @@ def main():
         check("fișierul semnat se vede tot ca formular (2 pagini)", info["xfaView"] and len(info["pages"]) == 2 and info["signed"], info.get("pages"))
     check("originalul nesemnat a rămas neatins", xfa.read_bytes() == original)
 
+    print("== semnătură vizibilă pe formularul XFA (ca în Acrobat) ==")
+    viz = folder / "xfa_vizibil.pdf"
+    viz.write_bytes(original)
+    # câmpul „semnatura” din șablon: x=250pt y=270pt în zona de conținut (36pt, 36pt), 200x60pt
+    res = certsign.sign_many("", [{"path": str(viz), "place": {"page": 1, "rect": [286, 306, 486, 352]}}], "Test", "")
+    if check("se semnează vizibil", res[0].get("ok"), res[0].get("error", "")):
+        out = Path(res[0]["out"])
+        v = validate(out)
+        check("semnătura vizibilă e validă", len(v) == 1 and v[0][2] and v[0][3], v)
+        pv = xfaview.preview(out)
+        if check("formularul se desenează și cu semnătură vizibilă (nu «Please wait»)", pv, xfaview._failed):
+            with fitz.open(pv) as d:
+                check("are tot cele două pagini ale formularului", d.page_count == 2, d.page_count)
+                hits = d[0].search_for("Semnat digital")
+                check("aspectul semnăturii e pus în caseta de semnătură a formularului",
+                      len(hits) == 1 and 270 < hits[0].x0 < 500 and 290 < hits[0].y0 < 380, hits)
+                check("textul formularului e tot acolo", "FORMULAR DE TEST XFA" in d[0].get_text())
+
     for p in extra:
         print(f"== {p.name} ==")
         with fitz.open(p) as d:
