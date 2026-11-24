@@ -60,7 +60,10 @@ except ET.ParseError:
     print("Erori la validare fisier; cod eroare=-5")
     sys.exit(0)
 ns = re.match(r"\{(.*?)\}", root.tag)
-if not ns or ns.group(1) != NS:
+# versiunea curentă a schemei: v1 la declarațiile inventate de teste; D300 are și schema reală a formularului
+# inteligent din 2026 (v12), cea scrisă de „Validează formularul” (bin/xfaprep.py). Alta: eroare de structură.
+CURRENT = {NS} | ({"mfp:anaf:dgti:d300:declaratie:v12"} if decl.upper() == "D300" else set())
+if not ns or ns.group(1) not in CURRENT:
     write_err("F: validari globale\n va rugam sa verificati daca folositi versiunea corecta de PDF inteligent\n"
               f" eroare structura: namespace ('{ns.group(1) if ns else ''}') lipsa sau incorect la sectiunea {root.tag.split('}')[-1]}. "
               f"Valoarea corecta este xmlns='{NS}'\n")

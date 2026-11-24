@@ -67,6 +67,8 @@ Unelte → **Validare și semnare declarații** (sau butonul **Validează** de l
 2. **Validează**: fișierul e verificat cu validatorul oficial al ANAF (cel din DUKIntegrator, „soft J”). Erorile apar cu explicația lor și cu mesajul ANAF dedesubt.
 3. Dacă nu are erori, lângă XML apare PDF-ul declarației (cu XML-ul atașat), iar dedesubt alegi certificatul și apeși **Semnează**: rezultatul e `<nume>_semnat.pdf`, pe care îl depui în SPV.
 
+**D300 scos din SAGA Web** (formular inteligent „FORMULAR NEVALIDAT”, fără XML): deschis în PDF Sign, bara de sus arată **Validează formularul**. Aplicația face ce face butonul cu același nume din Adobe: scrie XML-ul din formular (după scriptul formularului), îl verifică cu validatorul ANAF și, dacă trece, face `<nume>_validat.pdf` — formularul colorat, validat, cu `D300.xml` atașat — pe care îl semnezi în caseta „Semnatura”. Dacă validatorul găsește erori (de exemplu adresa sau CAEN-ul firmei goale în programul de contabilitate), nu se face nimic: corectezi acolo și generezi din nou declarația.
+
 Validatoarele nu sunt în kit: aplicația le ia singură de pe site-ul ANAF (`static.anaf.ro`), în folderul ei, doar pentru declarațiile pe care le folosești, și verifică o dată pe zi dacă ANAF a publicat o versiune nouă. Java, de care au nevoie, e cel adus cu Stirling PDF (sau, dacă lipsește, unul mic adus atunci). Fără internet merg validatoarele deja aduse.
 
 După semnare, validatorul ANAF verifică și PDF-ul semnat. La certificatele cu cheie RSA (tokenurile calificate obișnuite) confirmă semnătura; la buletinul electronic (cheie ECDSA) nu o poate verifica, fiindcă programul ANAF e vechi. În ambele cazuri, dacă serverul ANAF primește declarația se vede abia la depunere, din recipisă.

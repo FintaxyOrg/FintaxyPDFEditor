@@ -35,6 +35,10 @@ const EN = {
   'Nu am găsit niciunul dintre texte în document (într-un PDF scanat rulează întâi OCR).': 'None of the texts were found in the document (on a scanned PDF run OCR first).',
   // semnătura electronică: surse, PIN, starea FintaxySign, fazele semnării (v0.15)
   'Formularul inteligent (XFA) nu se poate modifica aici: îl citești, îl printezi și îl semnezi electronic.': 'The smart form (XFA) cannot be changed here: you can read it, print it and sign it electronically.',
+  'Formular nevalidat': 'Form not validated',
+  'fără XML-ul declarației (așa îl dă programul de contabilitate). Îl validezi aici, ca în Adobe: XML-ul, validatorul ANAF, apoi formularul validat de semnat.':
+    'without the return\'s XML (as the accounting software makes it). Validate it here, as in Adobe: the XML, ANAF\'s validator, then the validated form to sign.',
+  'Validează formularul': 'Validate the form',
   'Formular inteligent (XFA): semnătura se adaugă invizibilă și se vede în panoul de semnături.': 'Smart form (XFA): the signature is added invisibly and shows in the signatures panel.',
   'Formularul nu a putut fi desenat': 'The form could not be drawn', 'se vede pagina din fișier. Deschide-l în Adobe Reader sau încearcă din nou.': 'showing the page stored in the file. Open it in Adobe Reader or try again.',
   'FintaxySign: pornit, stick conectat': 'FintaxySign: running, stick connected',

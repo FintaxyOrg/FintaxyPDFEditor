@@ -1595,7 +1595,7 @@ function openAnaf(preset) {
   const d = openDrawer('Validare și semnare declarații', h('div', { class: 'db' }, form))
   d.querySelector('.dh h2').append(infoMark(ANAF_TIP))
   d.querySelector('.dh').prepend(h('button', { class: 'icon', title: 'Înapoi la unelte', onclick: () => openTools() }, icon('back')))
-  let file = preset || (S.doc?.attachments?.some(a => /\.xml$/i.test(a.name)) ? S.doc.path : '')
+  let file = preset || (S.doc?.attachments?.some(a => /\.xml$/i.test(a.name)) || S.doc?.xfaPrepare ? S.doc.path : '')
   const fname = h('span', { class: 'bn' })
   const pick = h('button', { class: 'secondary', type: 'button' }, 'Alege…')
   const type = h('select', {}, h('option', { value: '' }, 'Automat'))
@@ -1639,7 +1639,7 @@ function openAnaf(preset) {
         const res = s.results[0]
         if (!res?.ok) throw new Error(res?.error || 'Semnarea nu a reușit.')
         const cards = [showResult({ kind: 'pdf', out: res.out })]
-        if (r.source === 'xml') {
+        if (r.source === 'xml' || r.prepared) {
           out.replaceChildren(h('div', { class: 'result signing' }, h('span', { class: 'spin' }), h('span', {}, 'Verific PDF-ul semnat cu validatorul ANAF…')))
           try {
             const v = await post('anaf/verify', { path: res.out, decl: r.decl })
@@ -1725,6 +1725,9 @@ function renderDocBar() {
   if (d.xfa) {
     rows.push(h('div', { class: 'row' }, h('b', {}, 'Formular inteligent (XFA)'),
       h('span', {}, 'ca declarațiile ANAF. Îl poți citi și semna electronic aici; datele se completează în programul ANAF sau în Adobe Reader.')))
+    if (d.xfaPrepare) rows.push(h('div', { class: 'row' }, h('b', {}, 'Formular nevalidat'),
+      h('span', {}, 'fără XML-ul declarației (așa îl dă programul de contabilitate). Îl validezi aici, ca în Adobe: XML-ul, validatorul ANAF, apoi formularul validat de semnat.'),
+      h('button', { class: 'primary', onclick: () => openAnaf(PATH) }, 'Validează formularul')))
     if (d.xfa && !d.xfaView && d.pages.length === 1) rows.push(h('div', { class: 'row' }, h('b', {}, 'Formularul nu a putut fi desenat'),
       h('span', {}, 'se vede pagina din fișier. Deschide-l în Adobe Reader sau încearcă din nou.')))
   } else if (d.fields && !d.signed) {
