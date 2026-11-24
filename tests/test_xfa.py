@@ -232,6 +232,26 @@ def main():
         check("a doua semnare în aceeași casetă e refuzată", not again[0].get("ok") and "deja semnată" in again[0].get("error", ""),
               again[0])
 
+    # Câmpul casetei există deja, gol (pus de Acrobat sau de pregătirea declarației): aspectul tot ca la Acrobat.
+    import io as _io
+    from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+    pre = folder / "xfa_camp_gol.pdf"
+    w = IncrementalPdfFileWriter(_io.BytesIO(original), strict=False)
+    xfasign.add_field(w, names[0], [286, 490, 486, 536])
+    buf = _io.BytesIO()
+    w.write(buf)
+    pre.write_bytes(buf.getvalue())
+    res = certsign.sign_many("", [{"path": str(pre), "place": {"xfa": names[0]}}], "Test", "")
+    if check("caseta cu câmpul deja pus se semnează", res[0].get("ok"), res[0].get("error", "")):
+        out = Path(res[0]["out"])
+        with fitz.open(out) as d:
+            sf = fx_sign.signature_fields(d)
+            check("tot un singur câmp, cel existent, acum semnat", [(f["name"], f["signed"]) for f in sf] == [(names[0], True)], sf)
+        pv = xfaview.preview(out)
+        with fitz.open(pv) as d:
+            hits = d[0].search_for("Digitally signed")
+        check("și aici aspectul e cel de la Acrobat, în caseta formularului", len(hits) == 1, hits)
+
     for p in extra:
         print(f"== {p.name} ==")
         with fitz.open(p) as d:

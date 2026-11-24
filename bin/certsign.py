@@ -427,12 +427,21 @@ def sign_pdf(signer: WinSigner, pdf: str, place: dict | None = None, reason: str
         existing = signature_fields(doc)
         new_spec = None
         field = None
+        acrobat_size = None  # (lățime, înălțime): semnătură în caseta unui formular XFA -> aspectul ca la Acrobat
         if xfa_rect is not None:
             field = place["xfa"]
+            acrobat_size = (xfa_rect[2] - xfa_rect[0], xfa_rect[3] - xfa_rect[1])
         elif place and place.get("field"):
             field = place["field"]
             if any(f["name"] == field and f["signed"] for f in existing):
                 raise ValueError(f"Câmpul „{field}” e deja semnat.")
+            # câmpul există deja (pus de Acrobat sau de o pregătire a declarației) și e caseta de semnătură a
+            # formularului XFA: același aspect ca atunci când îl creăm noi
+            if xfaview.needs(doc) and field in {g["name"] for g in xfasign.fields(doc)}:
+                f0 = next((f for f in existing if f["name"] == field), None)
+                if f0 and f0.get("rect"):
+                    r0 = f0["rect"]
+                    acrobat_size = (r0[2] - r0[0], r0[3] - r0[1])
         else:
             taken = {f["name"] for f in existing}
             field = next(f"Semnatura{k}" for k in range(1, 999) if f"Semnatura{k}" not in taken)
@@ -454,10 +463,10 @@ def sign_pdf(signer: WinSigner, pdf: str, place: dict | None = None, reason: str
     w = IncrementalPdfFileWriter(io.BytesIO(data), strict=False)
     look = None
     if xfa_rect is not None:
-        # formular XFA dinamic: câmpul cu numele de la Acrobat, în aceeași actualizare cu semnătura, și aspectul Acrobat
+        # formular XFA dinamic fără câmp: câmpul cu numele de la Acrobat, în aceeași actualizare cu semnătura
         xfasign.add_field(w, field, xfa_rect)
-        look = xfasign.look(plain(name), datetime.datetime.now().astimezone(),
-                            xfa_rect[2] - xfa_rect[0], xfa_rect[3] - xfa_rect[1])
+    if acrobat_size and acrobat_size[0] > 1 and acrobat_size[1] > 1:
+        look = xfasign.look(plain(name), datetime.datetime.now().astimezone(), *acrobat_size)
         if look:
             style = xfasign.stamp_style(look)
     try:
