@@ -1373,6 +1373,7 @@ function certPicker(form) {
   form.append(h('label', { class: 'field' }, h('span', {}, 'Certificat *'), sel, help), pin, h('div', { class: 'certrow' }, reload, fsRow))
   let list = []
   let again = 0
+  let tries = 0
   const showPin = () => {
     const c = list.find(x => x.thumb === sel.value)
     pin.hidden = !c?.pinHint
@@ -1398,6 +1399,8 @@ function certPicker(form) {
         sel.replaceChildren(h('option', { value: '' }, 'Niciun certificat de semnare în Windows'))
         help.textContent = tr(NO_CERT)
         pin.hidden = true
+        // Certificatele de pe stick-ul de la distanță ajung în Windows abia după ce răspunde stick-ul: mai întrebăm.
+        if (tries++ < 3 && sel.isConnected) again = setTimeout(() => load('quiet'), 4000)
         return
       }
       draw()
@@ -1407,7 +1410,7 @@ function certPicker(form) {
       sel.replaceChildren(h('option', { value: '' }, `Eroare: ${err.message}`))
     }
   }
-  reload.addEventListener('click', () => load(true))
+  reload.addEventListener('click', () => { tries = 0; load(true) })
   sel.addEventListener('change', () => { showPin(); try { localStorage.setItem('fx-cert', sel.value) } catch { /* nu e esențial */ } })
   load()
   return () => sel.value
