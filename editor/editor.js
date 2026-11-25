@@ -1424,6 +1424,12 @@ const SIGN_PHASE = {
   hidden: 'Windows a deschis fereastra de PIN, dar o ține ascunsă. Apasă Anulează și încearcă din nou.',
   sign: 'PIN primit. Se semnează…',
 }
+// Formular ANAF nevalidat în Adobe (ex. din SAGA Web): la semnare s-a completat versiunea formularului (universalCode),
+// fără de care ANAF respinge depunerea. Îi spunem omului ce s-a schimbat în fișierul semnat.
+function versionNote(res) {
+  if (res?.form_version) toast(tr(`Versiunea formularului completată: ${res.form_version}`) + ' · ' + tr('ca la validarea în Adobe; fără ea ANAF respinge depunerea.'), { ms: 9000 })
+}
+
 async function runSign(body, result) {
   const text = h('span', {}, SIGN_PHASE.open)
   const stop = h('button', { class: 'linkbtn danger', type: 'button' }, 'Anulează')
@@ -1520,6 +1526,7 @@ function openCertSign() {
       await openDoc(res.out, S.cur)
       result.replaceChildren(showResult({ kind: 'pdf', out: res.out }))
       toast(`Semnat electronic: ${base(res.out)}`)
+      versionNote(res)
     } catch (err) {
       result.replaceChildren(h('div', { class: 'result err' }, err.message))
     } finally {
@@ -1568,7 +1575,8 @@ function openBulkSign() {
       const r = await runSign({ thumb: t, items: files.map(path => ({ path, place: 'auto' })), reason: reason.value, location: location.value }, result)
       const ok = r.results.filter(x => x.ok).length
       const rows = r.results.map(x => h('div', { class: 'brow' }, h('span', { class: 'bn', title: x.out || x.path }, `${x.ok ? '✓' : '✗'} ${base(x.out || x.path)}`),
-        x.ok ? h('button', { class: 'linkbtn', type: 'button', onclick: () => post('open', { path: x.out, how: 'explorer' }) }, 'Explorer') : h('small', {}, x.error)))
+        x.ok ? h('button', { class: 'linkbtn', type: 'button', onclick: () => post('open', { path: x.out, how: 'explorer' }) }, 'Explorer') : h('small', {}, x.error),
+        x.form_version ? h('small', {}, tr(`Versiunea formularului completată: ${x.form_version}`)) : null))
       const skipped = files.length - r.results.length
       result.replaceChildren(h('div', { class: `result ${ok === files.length ? 'ok' : 'err'}` },
         h('div', {}, `${ok} din ${files.length} semnate` + (skipped ? ` · ${skipped} nesemnate (semnarea a fost oprită)` : '')), ...rows))
@@ -1651,6 +1659,7 @@ function openAnaf(preset) {
         }
         out.replaceChildren(...cards)
         toast(`Semnat electronic: ${base(res.out)}`)
+        versionNote(res)
       } catch (err) {
         out.replaceChildren(h('div', { class: 'result err' }, err.message))
       } finally {

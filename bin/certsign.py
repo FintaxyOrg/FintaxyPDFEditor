@@ -30,6 +30,7 @@ from pyhanko_certvalidator.registry import SimpleCertificateStore
 import fx_sign
 import winenv
 import xfasign
+import xfaversion
 import xfaview
 
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -467,6 +468,8 @@ def sign_pdf(signer: WinSigner, pdf: str, place: dict | None = None, reason: str
                            border_width=1, border_color=(0.55, 0.6, 0.7))
     out_buf = io.BytesIO()
     w = IncrementalPdfFileWriter(io.BytesIO(data), strict=False)
+    # formular ANAF nevalidat în Adobe (ex. din SAGA Web): versiunea formularului, fără de care ANAF îl respinge
+    xfaversion.fix(w)
     look = None
     if xfa_rect is not None:
         # formular XFA dinamic fără câmp: câmpul cu numele de la Acrobat, în aceeași actualizare cu semnătura
@@ -539,8 +542,11 @@ def sign_many(thumb: str, items: list, reason: str = "", location: str = "", on_
                     raise FileNotFoundError("Fișierul nu mai există.")
                 if place == "auto":
                     place = auto_place(it["path"])
+                version = xfaversion.needed(it["path"])  # o completează sign_pdf; aici doar ca s-o spunem omului
                 out = sign_pdf(signer, it["path"], place, reason, location)
                 res = {"path": it["path"], "ok": True, "out": out, "s": round(time.time() - t, 1)}
+                if version:
+                    res["form_version"] = version["value"]
             except SignStop as err:
                 # PIN greșit, card blocat sau anulare: nu mai întrebăm la fiecare fișier (fiecare încercare costă un PIN).
                 results.append({"path": it["path"], "ok": False, "error": str(err), "stopped": True})
