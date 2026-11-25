@@ -1057,6 +1057,12 @@ addEventListener('beforeprint', () => {
 addEventListener('afterprint', endPrint)
 
 // ---------- sertarul din dreapta ----------
+// Textul descriptiv stă în semnul „i” de lângă titlu (la hover), nu ca paragraf sub el.
+const infoMark = text => h('span', { class: 'infomark', 'data-tip': tr(text), tabindex: '0' }, 'i')
+const titleTip = (d, text) => { if (text) d.querySelector('.dh h2').append(infoMark(text)) }
+const UNSAVED = 'Ai modificări nesalvate: apasă întâi Salvează.'
+const UNSAVED_TIP = 'Unealta lucrează pe fișierul salvat; modificările nesalvate nu intră.'
+const warnTip = (text, tip) => h('div', { class: 'warn' }, text, tip ? infoMark(tip) : null)
 function openDrawer(title, ...content) {
   const d = $('#drawer')
   d.hidden = false
@@ -1186,8 +1192,8 @@ function openLocalTool(t) {
   const form = h('div', { class: 'form' })
   const d = openDrawer(t.label, h('div', { class: 'db' }, form))
   d.querySelector('.dh').prepend(h('button', { class: 'icon', title: 'Înapoi la unelte', onclick: () => openTools() }, icon('back')))
-  if (t.desc) form.append(h('p', { class: 'desc' }, t.desc))
-  if (changed().length && !t.noDoc) form.append(h('div', { class: 'warn' }, 'Ai modificări nesalvate. Unealta lucrează pe fișierul salvat; apasă întâi Salvează dacă vrei să le includă.'))
+  titleTip(d, t.desc)
+  if (changed().length && !t.noDoc) form.append(warnTip(UNSAVED, UNSAVED_TIP))
   const reads = (t.fields || []).map(f => [f, localField(form, f)])
   const go = h('button', { class: 'primary' }, 'Rulează')
   const result = h('div')
@@ -1230,8 +1236,9 @@ async function openToolForm(t) {
   const d = openDrawer(t.label, body)
   d.querySelector('.dh').prepend(h('button', { class: 'icon', title: 'Înapoi la unelte', onclick: () => openTools() }, icon('back')))
   if (needsStirling(t)) {
-    return body.replaceChildren(h('div', { class: 'form' }, t.desc ? h('p', { class: 'desc' }, t.desc) : null,
-      h('div', { class: 'warn' }, 'Unealta asta face parte din pachetul Stirling, care se instalează singur în fundal la prima pornire. Încearcă din nou în câteva minute.'),
+    titleTip(d, t.desc)
+    return body.replaceChildren(h('div', { class: 'form' },
+      warnTip('Se instalează în fundal. Revino în câteva minute.', 'Unealta asta face parte din pachetul Stirling, care se instalează singur în fundal la prima pornire. Încearcă din nou în câteva minute.'),
       h('div', { class: 'buttons' }, h('button', { class: 'secondary', type: 'button', onclick: () => openDeps() }, 'Vezi starea componentelor'))))
   }
   body.append(h('div', { class: 'form' }, h('p', { class: 'desc' }, h('span', { class: 'spin' }), 'Încarc unealta din Stirling PDF…')))
@@ -1244,8 +1251,8 @@ async function openToolForm(t) {
   if (!spec) return body.replaceChildren(h('div', { class: 'form' }, h('div', { class: 'result err' }, 'Unealta nu există în versiunea ta de Stirling PDF.')))
   const form = h('div', { class: 'form' })
   body.replaceChildren(form)
-  form.append(h('p', { class: 'desc' }, t.desc || spec.description || spec.summary))
-  if (changed().length && !t.noDoc) form.append(h('div', { class: 'warn' }, 'Ai modificări nesalvate. Unealta lucrează pe fișierul salvat; apasă întâi Salvează dacă vrei să le includă.'))
+  titleTip(d, t.desc || spec.description || spec.summary)
+  if (changed().length && !t.noDoc) form.append(warnTip(UNSAVED, UNSAVED_TIP))
   const controls = []
   const mainName = spec.fields.find(f => f.name === 'fileInput' || f.name === 'file')?.name
   const extra = {}
@@ -1264,8 +1271,8 @@ async function openToolForm(t) {
       if (isFile) {
         const inp = h('input', { type: 'file', multiple: f.type === 'array' })
         extra[f.name] = inp
-        form.append(h('label', { class: 'field' }, h('span', {}, (FIELD_LABELS[f.name] || humanize(f.name)) + (f.required ? ' *' : '')), inp,
-          f.description ? h('small', {}, f.description) : null))
+        form.append(h('label', { class: 'field' }, h('span', {}, (FIELD_LABELS[f.name] || humanize(f.name)) + (f.required ? ' *' : ''),
+          f.description ? infoMark(f.description) : null), inp))
         continue
       }
       form.append(fieldControl(f, controls, t))
@@ -1305,13 +1312,13 @@ function fieldControl(f, controls, t) {
   // Doar valorile implicite reale; exemplele din API (ex. 25KB la comprimare) rămân sugestii.
   const def = t?.defaults?.[f.name] ?? f.default
   const hintVal = f.example != null && typeof f.example !== 'object' ? String(f.example) : ''
-  const help = f.description ? h('small', {}, f.description) : null
+  const help = f.description ? infoMark(f.description) : null
   let el, read
   if (f.type === 'boolean') {
     el = h('input', { type: 'checkbox', checked: def === true || def === 'true' })
     read = () => el.checked
     controls.push({ name: f.name, read })
-    return h('label', { class: 'field' }, h('span', { class: 'check' }, el, label), help)
+    return h('label', { class: 'field' }, h('span', { class: 'check' }, el, label, help))
   }
   if (f.type === 'array' && f.enum) {
     el = h('select', { multiple: true, size: Math.min(6, f.enum.length) }, ...f.enum.map(v => h('option', { value: v, selected: Array.isArray(def) ? def.includes(v) : v === def }, String(v))))
@@ -1336,7 +1343,7 @@ function fieldControl(f, controls, t) {
     read = () => el.value
   }
   controls.push({ name: f.name, read })
-  return h('label', { class: 'field' }, h('span', {}, label), el, help)
+  return h('label', { class: 'field' }, h('span', {}, label, help), el)
 }
 
 // ---------- semnătura electronică (certificat) ----------
@@ -1357,33 +1364,42 @@ async function fintaxySignRow(box, reload) {
     } catch (err) { toast(err.message, { err: true }) }
     start.disabled = false
   })
-  let cls = 'ok', text = 'FintaxySign: pornit, stick conectat'
+  let cls = 'ok', text = 'FintaxySign: conectat', tip = ''
   let extra = null
-  if (!fs.running) { cls = 'off'; text = fs.path ? 'FintaxySign: oprit' : 'FintaxySign: neinstalat pe acest calculator'; extra = fs.path ? start : null }
-  else if (!fs.driver) { cls = 'warn'; text = 'FintaxySign: pornit, dar lipsește driverul (apasă „Install driver…” în FintaxySign)' }
-  else if (!fs.stick) { cls = 'warn'; text = 'FintaxySign: pornit, stick-ul nu e conectat încă (verifică să scrie „connected”)' }
-  box.replaceChildren(...[h('span', { class: `dot ${cls}` }), h('span', {}, text), extra].filter(Boolean))
+  if (!fs.running) { cls = 'off'; text = fs.path ? 'FintaxySign: oprit' : 'FintaxySign: neinstalat'; extra = fs.path ? start : null }
+  else if (!fs.driver) { cls = 'warn'; text = 'FintaxySign: fără driver'; tip = 'Apasă „Install driver…” în FintaxySign, apoi Reîncarcă.' }
+  else if (!fs.stick) { cls = 'warn'; text = 'FintaxySign: stick neconectat'; tip = 'Verifică să scrie „connected” în FintaxySign, apoi Reîncarcă.' }
+  box.replaceChildren(...[h('span', { class: `dot ${cls}` }), h('span', {}, text), tip ? infoMark(tip) : null, extra].filter(Boolean))
 }
 function certPicker(form) {
   const sel = h('select', {}, h('option', { value: '' }, 'Se încarcă certificatele…'))
-  const help = h('small', {})
-  const pin = h('div', { class: 'pinhint', hidden: true })
+  // Un singur semn „i” lângă „Certificat”: ce PIN cere certificatul ales sau, fără certificate, ce să verifici.
+  const tip = infoMark('')
+  tip.hidden = true
+  const setTip = text => { tip.hidden = !text; tip.dataset.tip = text ? tr(text) : '' }
   const fsRow = h('div', { class: 'fsrow' })
   const reload = h('button', { class: 'linkbtn', type: 'button' }, '↻ Reîncarcă')
-  form.append(h('label', { class: 'field' }, h('span', {}, 'Certificat *'), sel, help), pin, h('div', { class: 'certrow' }, reload, fsRow))
+  // În listă doar numele (încape și în panoul îngust); sursa și data sunt pe rândul mic de sub listă.
+  const meta = h('small', { class: 'certmeta' })
+  form.append(h('label', { class: 'field' }, h('span', {}, 'Certificat *', tip), sel, meta), h('div', { class: 'certrow' }, reload, fsRow))
   let list = []
   let again = 0
   let tries = 0
   const showPin = () => {
     const c = list.find(x => x.thumb === sel.value)
-    pin.hidden = !c?.pinHint
-    pin.textContent = c?.pinHint ? tr(c.pinHint) : ''
+    setTip(c?.pinHint || '')
+    sel.title = c ? tr(c.label) : ''
+    meta.replaceChildren(...(c ? [h('span', {}, c.sourceName), ' · ', h('span', {}, `valabil până la ${c.notAfter}`),
+      c.absent ? ' · ' : '', c.absent ? h('b', {}, 'NECONECTAT') : ''] : []))
   }
+  const short = c => (c.friendly || c.name) + (c.expired ? ' · EXPIRAT' : '')
   const draw = () => {
     let last = ''
     try { last = localStorage.getItem('fx-cert') || '' } catch { /* fără memorie, alegem primul */ }
     const keep = sel.value || last
-    sel.replaceChildren(...list.map(c => h('option', { value: c.thumb, disabled: c.expired }, c.label)))
+    const groups = [...new Set(list.map(c => c.sourceName))]
+    sel.replaceChildren(...groups.map(g => h('optgroup', { label: tr(g) },
+      ...list.filter(c => c.sourceName === g).map(c => h('option', { value: c.thumb, disabled: c.expired, title: c.label }, short(c))))))
     const usable = list.filter(c => !c.expired)
     sel.value = usable.some(c => c.thumb === keep) ? keep : usable[0]?.thumb || ''
     showPin()
@@ -1391,14 +1407,13 @@ function certPicker(form) {
   const load = async fresh => {
     clearTimeout(again)
     if (fresh !== 'quiet') sel.replaceChildren(h('option', { value: '' }, 'Se încarcă certificatele…'))
-    help.textContent = ''
+    setTip('')
     fintaxySignRow(fsRow, () => load(true))
     try {
       list = await api('certs', fresh === true ? { fresh: 1 } : {})
       if (!list.length) {
-        sel.replaceChildren(h('option', { value: '' }, 'Niciun certificat de semnare în Windows'))
-        help.textContent = tr(NO_CERT)
-        pin.hidden = true
+        sel.replaceChildren(h('option', { value: '' }, 'Niciun certificat găsit'))
+        setTip(NO_CERT)
         // Certificatele de pe stick-ul de la distanță ajung în Windows abia după ce răspunde stick-ul: mai întrebăm.
         if (tries++ < 3 && sel.isConnected) again = setTimeout(() => load('quiet'), 4000)
         return
@@ -1463,15 +1478,15 @@ function openCertSign() {
   closePop()
   const form = h('div', { class: 'form' })
   const d = openDrawer('Semnătură electronică', h('div', { class: 'db' }, form))
-  form.append(h('p', { class: 'desc' }, 'Semnătură digitală calificată cu un certificat din Windows: buletinul electronic, un token sau stick-ul din birou (FintaxySign). Windows îți cere PIN-ul.'))
-  if (changed().length) form.append(h('div', { class: 'warn' }, 'Ai modificări nesalvate. Semnătura se pune pe fișierul salvat: apasă întâi Salvează.'))
-  if (S.doc.signed) form.append(h('div', { class: 'warn' }, 'PDF-ul are deja o semnătură; a ta se adaugă după ea, fără s-o strice.'))
+  titleTip(d, 'Semnătură digitală calificată cu un certificat din Windows: buletinul electronic, un token sau stick-ul din birou (FintaxySign). Windows îți cere PIN-ul.')
+  if (changed().length) form.append(warnTip(UNSAVED, 'Semnătura se pune pe fișierul salvat.'))
+  if (S.doc.signed) form.append(warnTip('PDF-ul are deja o semnătură.', 'A ta se adaugă după ea, fără s-o strice.'))
   const thumb = certPicker(form)
   const xfaSigs = S.doc.xfaView ? (S.doc.xfaSigfields || []) : []
   const empty = S.doc.xfaView ? [] : S.doc.sigfields.filter(f => !f.signed && f.visible)
   // Formular XFA dinamic: semnătura merge în caseta de semnătură a formularului, ca în Acrobat (câmpul cu numele lui);
   // un formular fără casetă se semnează invizibil.
-  if (S.doc.xfaView && !xfaSigs.length) form.append(h('div', { class: 'warn' }, 'Formular inteligent (XFA): semnătura se adaugă invizibilă și se vede în panoul de semnături.'))
+  if (S.doc.xfaView && !xfaSigs.length) form.append(warnTip('Semnătura va fi invizibilă.', 'Formular inteligent (XFA) fără casetă de semnătură: semnătura se adaugă invizibilă și se vede în panoul de semnături.'))
   const opts = [...xfaSigs.map(f => [`xfa:${f.name}`, tr('În caseta „{0}” a formularului (ca în Acrobat)').replace('{0}', f.caption || 'Semnătura')]),
     ...empty.map(f => [`field:${f.name}`, `În câmpul de semnătură de pe pagina ${f.page}`]),
     ...(S.doc.xfaView ? [] : [['box', 'Aleg locul pe pagină (trag un dreptunghi)']]), ['none', 'Invizibilă (se vede în panoul de semnături)']]
@@ -1532,8 +1547,8 @@ function openBulkSign() {
   closePop()
   const files = S.doc ? [S.doc.path] : []
   const form = h('div', { class: 'form' })
-  openDrawer('Semnează mai multe PDF-uri', h('div', { class: 'db' }, form))
-  form.append(h('p', { class: 'desc' }, 'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN. Fiecare PDF e semnat în câmpul lui de semnătură gol (declarațiile ANAF, formularele, inclusiv caseta „Semnătura” a formularelor inteligente) sau, dacă nu are, invizibil. Lângă fiecare apare <nume>_semnat.pdf.'))
+  const d = openDrawer('Semnează mai multe PDF-uri', h('div', { class: 'db' }, form))
+  titleTip(d, 'Semnătură electronică pe mai multe PDF-uri deodată, cu un singur PIN. Fiecare PDF e semnat în câmpul lui de semnătură gol (declarațiile ANAF, formularele, inclusiv caseta „Semnătura” a formularelor inteligente) sau, dacă nu are, invizibil. Lângă fiecare apare <nume>_semnat.pdf.')
   const list = h('div', { class: 'blist' })
   const add = h('button', { class: 'secondary', type: 'button' }, '+ Adaugă PDF-uri…')
   const go = h('button', { class: 'primary' })
@@ -1556,7 +1571,7 @@ function openBulkSign() {
   form.append(h('div', { class: 'field' }, h('span', {}, 'Fișiere'), list, h('div', {}, add)))
   const thumb = certPicker(form)
   const [reason, location] = textInputs(form, ['Motiv (opțional)'], ['Locul (opțional)', 'ex. București'])
-  form.append(h('div', { class: 'warn' }, 'Cu stick-ul din birou (FintaxySign): apasă întâi „Reserve 2 min” în FintaxySign, ca să nu-l ia un coleg între fișiere (altfel PIN-ul se cere din nou).'))
+  form.append(warnTip('Stick-ul din birou: rezervă-l întâi.', 'Cu stick-ul din birou (FintaxySign): apasă întâi „Reserve 2 min” în FintaxySign, ca să nu-l ia un coleg între fișiere (altfel PIN-ul se cere din nou).'))
   const result = h('div')
   form.append(h('div', { class: 'buttons' }, go), result)
   draw()
@@ -1585,7 +1600,6 @@ function openBulkSign() {
 // ---------- validare și semnare declarații (validatoarele ANAF, bin/anaf.py) ----------
 // Omul alege XML-ul declarației (sau PDF-ul ANAF cu XML atașat); validatorul oficial ANAF îl verifică, face PDF-ul
 // și semnătura electronică se pune cu certificatul din Windows. Textele lungi stau în semnul „i”, nu pe ecran.
-const infoMark = text => h('span', { class: 'infomark', 'data-tip': tr(text), tabindex: '0' }, 'i')
 const ANAF_TIP = 'Alegi XML-ul declarației (D100, D112, D300, D390, D394…) sau PDF-ul ANAF care îl are atașat. Îl verifică validatorul oficial al ANAF (DUKIntegrator), pe care aplicația îl aduce și îl ține la zi singură de pe site-ul ANAF. Dacă nu are erori, se face PDF-ul lângă XML și îl semnezi cu certificatul din Windows.'
 const ANAF_TYPE_TIP = 'Tipul se citește din fișier. Alege-l de mână doar dacă nu e recunoscut.'
 const ANAF_SIGN_TIP = 'Semnătura se pune cu certificatul din Windows (token, stick-ul din birou, buletin). Apoi validatorul ANAF verifică și PDF-ul semnat. Dacă îl primește și serverul ANAF se vede abia la depunerea în SPV.'
@@ -2249,7 +2263,7 @@ function heartbeat() {
 ;(async () => {
   if (TOKEN) S.app = { ...S.app, ...(await api('info').catch(() => ({}))) }
   applyLang()
-  initAssist({ h, $, api, post, url, toast, icon, tr, openDrawer, closeDrawer, openUpload, openDoc, state: S, path: () => S.doc?.path || PATH,
+  initAssist({ h, $, api, post, url, toast, icon, tr, openDrawer, closeDrawer, titleTip, openUpload, openDoc, state: S, path: () => S.doc?.path || PATH,
     reload: async msg => { if (!changed().length) { await openDoc(PATH, S.cur); toast(msg) } } })
   // Ghidul de la prima pornire (se poate sări; se redeschide din Ctrl+K → „Ghid de pornire”).
   if (TOKEN && !S.app.onboarded && Q.get('onboarding') !== '0') openOnboarding()
