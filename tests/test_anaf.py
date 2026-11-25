@@ -216,6 +216,36 @@ def offline():
     check("copia de lucru a declarației nu rămâne în folderul aplicației", not list((anaf.HOME / "work").iterdir()))
     check("nimic în plus lângă XML (fișiere de erori, jurnale)", sorted(p.name for p in docs.iterdir()) == ["D300_test.pdf", "D300_test.xml"], list(docs.iterdir()))
 
+    print("\n== D300 inteligent nevalidat (SAGA Web): „Validează formularul” ca în Adobe ==")
+    import shutil
+
+    import xfaprep
+    saga = docs / "D300_14626749_2026_09.pdf"
+    shutil.copyfile(ROOT / "tests" / "data" / "d300_saga_gbtest.pdf", saga)
+    original = saga.read_bytes()
+    check("recunoscut: D300 nevalidat, fără XML atașat", xfaprep.kind(str(saga)) == "D300")
+    xml = xfaprep.build_xml(str(saga))
+    check("XML-ul scris din scriptul formularului (genXML), cu suma de control",
+          all(a in xml for a in ('cui="14626749"', 'luna="9"', 'R9_1="1485"', 'R9_2="312"', 'totalPlata_A="6520"',
+                                 'xmlns="mfp:anaf:dgti:d300:declaratie:v12"')), xml[:300])
+    r = anaf.process(str(saga), "")
+    made = docs / "D300_14626749_2026_09_validat.pdf"
+    check("validat cu validatorul ANAF, din formular", r["status"] == "ok" and r["decl"] == "D300" and r["prepared"], r)
+    check("formularul validat e făcut lângă original", r["pdf"] == str(made) and made.is_file(), r.get("pdf"))
+    check("de semnat: formularul validat, în caseta lui („auto”)", r["sign"] == {"path": str(made), "place": "auto"}, r["sign"])
+    with fitz.open(made) as d:
+        check("formularul validat are D300.xml atașat, exact XML-ul din datele lui",
+              d.embfile_names() == ["D300.xml"] and d.embfile_get("D300.xml").decode() == xfaprep.build_xml(str(made)))
+        check("…și se deschide fără reparare", not d.is_repaired)
+    check("formularul validat = originalul + o actualizare (originalul nu se rescrie)",
+          made.read_bytes()[:len(original)] == original and saga.read_bytes() == original)
+    check("formularul validat nu mai e „de validat”", xfaprep.kind(str(made)) == "")
+    again = anaf.process(str(made), "")
+    check("validat apoi ca orice declarație cu XML atașat", again["status"] == "ok" and not again["prepared"], again)
+    check("un PDF fără XFA nu e tratat ca D300 de validat", xfaprep.kind(str(fx["doc"])) == "")
+    for f in (saga, made):
+        f.unlink()
+
     print("\n== actualizarea: cel mult o dată pe zi ==")
     HITS.clear()
     r = anaf.process(str(good))

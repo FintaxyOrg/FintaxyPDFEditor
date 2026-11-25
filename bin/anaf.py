@@ -437,9 +437,27 @@ def process(path: str, decl: str = "", make_pdf: bool = True, option: int = 0) -
         JOB.update(state="running", line="Se pregătește…")
         work = None
         try:
-            name, data = xml_of_pdf(src) if is_pdf else (src.name, src.read_bytes())
+            prepared = ""
+            if is_pdf:
+                try:
+                    name, data = xml_of_pdf(src)
+                except AnafError:
+                    # D300 inteligent nevalidat (scos din SAGA Web): XML-ul se scrie din formular, ca la
+                    # „Validează formularul” din Adobe (bin/xfaprep.py); altfel refuzul de până acum.
+                    import xfaprep
+                    prepared = xfaprep.kind(str(src))
+                    if not prepared:
+                        raise
+                    _say("Scriu XML-ul din formular, ca la „Validează formularul” din Adobe…")
+                    try:
+                        name, data = f"{prepared}.xml", xfaprep.build_xml(str(src)).encode("utf-8")
+                    except xfaprep.PrepError as err:
+                        raise AnafError(f"Formularul nu a putut fi citit: {err}") from None
+            else:
+                name, data = src.name, src.read_bytes()
             v = versions()
-            code = decl or detect(data, name, v["decl"].keys()) or (detect(b"", src.name, v["decl"].keys()) if is_pdf else "")
+            code = (decl or prepared or detect(data, name, v["decl"].keys())
+                    or (detect(b"", src.name, v["decl"].keys()) if is_pdf else ""))
             if not code:
                 return {"ok": True, "status": "unknown", "source": "pdf" if is_pdf else "xml", "types": types(v),
                         "note": "Nu mi-am dat seama ce declarație e. Alege tipul din listă."}
@@ -460,7 +478,20 @@ def process(path: str, decl: str = "", make_pdf: bool = True, option: int = 0) -
                        versions={"J": st.get("J", ""), "P": st.get("P", ""), "integrator": _state().get("integrator", "")},
                        updated=updated, online=v.get("online", True), pdf="", sign=None)
             good = res["status"] in ("ok", "warnings")
-            if good and is_pdf:
+            res["prepared"] = bool(prepared)
+            if good and prepared:
+                # formularul validat (colorat, ca din Adobe): <nume>_validat.pdf, cu D300.xml atașat
+                import xfaprep
+                made = xfaprep.validated_pdf(str(src))
+                res["pdf"] = made
+                res["sign"] = {"path": made, "place": "auto"}
+                res["note"] = ("XML-ul a fost scris din formular, ca la „Validează formularul” din Adobe, și a trecut "
+                               f"de validatorul ANAF. Formularul validat, cu XML-ul atașat: {Path(made).name} — "
+                               "semnează-l mai jos (în caseta „Semnatura”).")
+            elif prepared:
+                res["note"] = ("XML-ul scris din formular nu trece de validatorul ANAF: corectează datele în programul "
+                               "de contabilitate (ex. adresa / CAEN-ul firmei) și generează din nou declarația.")
+            elif good and is_pdf:
                 res["sign"] = {"path": str(src), "place": "auto"}
             elif good and want_pdf:
                 made = work / "declaratie.pdf"
