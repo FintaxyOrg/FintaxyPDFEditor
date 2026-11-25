@@ -485,7 +485,10 @@ def process(path: str, decl: str = "", make_pdf: bool = True, option: int = 0) -
 
 def verify_signed(path: str, decl: str) -> dict:
     """Verifică PDF-ul semnat cu DUKIntegrator (structură, atașament, semnătură, XML, metadate față de XML).
-    Are rost doar pentru PDF-urile făcute de el: pe PDF-urile inteligente noi verificarea lui de PDF dă erori false."""
+    Pe PDF-urile inteligente salvate din Adobe, comparația PDF–XML poate da diferențe false. EXCEPȚIE:
+    „Tipul declaratiei (D112) nu corespunde cu cel din PDF ()”, cu parantezele goale, e reală: formularul nu are
+    versiunea (universalCode) în date, iar ANAF îl respinge („Versiunea formularului nu este corecta”).
+    Vezi bin/xfaversion.py; semnarea din aplicație o completează."""
     src = Path(path)
     if not src.is_file():
         raise AnafError("Fișierul nu mai există.")
@@ -509,9 +512,12 @@ def verify_signed(path: str, decl: str) -> dict:
         return {"ok": True, "status": "unsupported", "lines": problems,
                 "note": "Validatorul ANAF de pe calculator nu poate verifica semnăturile făcute cu acest tip de cheie (ECDSA, ca la buletinul "
                         "electronic). Semnătura e pusă corect, dar nu putem confirma de aici că ANAF o primește."}
+    no_version = any(ln.startswith("Tipul declaratiei") and ln.rstrip().endswith("()") for ln in problems)
     if sig_err or problems or unsigned:
         return {"ok": True, "status": "errors", "lines": ([sig_err] if sig_err else []) + problems + (["PDF-ul nu este semnat."] if unsigned else []),
-                "note": "Validatorul ANAF a găsit probleme la PDF-ul semnat."}
+                "note": ("Formularul nu are versiunea în date (universalCode), deci ANAF îl respinge. Semnează din nou "
+                         "originalul nesemnat: aplicația completează versiunea, ca la validarea în Adobe.")
+                if no_version else "Validatorul ANAF a găsit probleme la PDF-ul semnat."}
     return {"ok": True, "status": "ok", "lines": [],
             "note": "Validatorul ANAF a verificat și PDF-ul semnat: structura, XML-ul atașat și semnătura sunt în regulă."}
 
