@@ -42,6 +42,22 @@
       const t = n.getAttribute('title') || n.getAttribute('placeholder') || ''
       if (en && RO.test(t) && !n.closest('.bn, .ct-tool, .brow')) found.push({ where, what: 'netradus (indiciu)', text: t.slice(0, 70) })
     }
+    // lista derulantă: textul ales trebuie să încapă (altfel omul vede „OCTAVIAN-ANDREI COICIU-” tăiat)
+    const ctx = document.createElement('canvas').getContext('2d')
+    for (const s of $$('select', root).filter(vis)) {
+      const o = s.selectedOptions[0]
+      if (!o) continue
+      const cs = getComputedStyle(s)
+      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+      const room = s.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 18
+      if (ctx.measureText(o.textContent).width > room) found.push({ where, what: 'listă tăiată', text: o.textContent.trim().slice(0, 50) })
+    }
+    // texte lungi pe ecran: explicațiile stau în semnul „i”, nu ca paragraf (rezultatele și erorile pot fi lungi)
+    for (const n of $$('p, small, .warn, .desc, .fsrow span', root).filter(vis)) {
+      if (n.closest('.result, pre, .ct-a, .ct-q, .chat-thread, .clist, .empty, .tool, .infomark') || $('.spin', n)) continue
+      const t = [...n.childNodes].filter(c => c.nodeType === 3).map(c => c.textContent).join('').trim()
+      if (t.length > 90) found.push({ where, what: 'text lung pe ecran', text: t.slice(0, 60) })
+    }
     // panoul trebuie să se poată derula dacă are mai mult conținut decât încape
     if (scroller.scrollHeight > scroller.clientHeight + 4 && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) {
       found.push({ where, what: 'nu se poate derula', el: scroller.className })

@@ -155,9 +155,9 @@ function depsBox(only, onReady) {
 export function openDeps() {
   const { h } = X
   const body = h('div', { class: 'db form' })
-  X.openDrawer(T('Componente', 'Components'), body)
-  body.append(h('p', { class: 'desc' }, T('Fac parte din PDF Sign și se instalează singure, în fundal, la prima pornire.', 'They are part of PDF Sign and install by themselves, in the background, on first start.')),
-    depsBox())
+  const d = X.openDrawer(T('Componente', 'Components'), body)
+  X.titleTip(d, T('Fac parte din PDF Sign și se instalează singure, în fundal, la prima pornire.', 'They are part of PDF Sign and install by themselves, in the background, on first start.'))
+  body.append(depsBox())
 }
 
 // ---------- chatul cu Claude ----------
