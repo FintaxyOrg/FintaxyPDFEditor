@@ -973,8 +973,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return None if path.startswith("/api/") else self.send(404, "text/plain", b"")
             if path == "/api/doc":
                 import mdview
-                if mdview.is_md(q["path"]):
-                    # Fișier Markdown: editorul primește PDF-ul lui de citit (și calea acestuia, cu care lucrează mai departe)
+                if mdview.is_doc(q["path"]):
+                    # Fișier Markdown sau Word: editorul primește PDF-ul lui de citit (și calea acestuia, cu care lucrează mai departe)
                     return self.json(doc_info(str(mdview.preview(q["path"]))))
                 return self.json(doc_info(q["path"]))
             if path == "/api/page":

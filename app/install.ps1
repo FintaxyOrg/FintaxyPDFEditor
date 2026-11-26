@@ -29,10 +29,13 @@ function Stop-App {
     Start-Sleep -Milliseconds 500
 }
 
+# Pe lângă PDF, aplicația deschide (prin PDF-ul lor de citit, bin/mdview.py) fișierele Markdown și documentele Word.
+$docExt = '.md', '.markdown', '.docx', '.doc', '.docm', '.dotx', '.dot', '.rtf', '.odt'
+
 if ($Uninstall) {
     Stop-App
     foreach ($k in $verb, $progId, $appKey, $uninstallKey) { if (Test-Path -LiteralPath $k) { Remove-Item -LiteralPath $k -Recurse -Force } }
-    foreach ($e in '.pdf', '.md', '.markdown') { Remove-ItemProperty -LiteralPath "$classes\$e\OpenWithProgids" -Name 'Fintaxy.PdfSign' -ErrorAction SilentlyContinue }
+    foreach ($e in @('.pdf') + $docExt) { Remove-ItemProperty -LiteralPath "$classes\$e\OpenWithProgids" -Name 'Fintaxy.PdfSign' -ErrorAction SilentlyContinue }
     foreach ($l in $links) { Remove-Item -LiteralPath $l -Force -ErrorAction SilentlyContinue }
     if ($here.TrimEnd('\') -eq $dest.TrimEnd('\')) {
         # Scriptul rulează chiar din folderul de șters: îl ștergem după ce se termină.
@@ -108,9 +111,10 @@ Set-Key "$progId\shell\open" $null @{ FriendlyAppName = 'PDF Sign' }
 Set-Key "$progId\shell\open\command" $cmd
 Set-Key "$classes\.pdf\OpenWithProgids" $null @{ 'Fintaxy.PdfSign' = '' }
 Set-Key $appKey $null @{ FriendlyAppName = 'PDF Sign' }
-Set-Key "$appKey\SupportedTypes" $null @{ '.pdf' = ''; '.md' = ''; '.markdown' = '' }
-# Fișierele Markdown: PDF Sign apare la „Deschide cu” (nu devine programul implicit)
-foreach ($e in '.md', '.markdown') { Set-Key "$classes\$e\OpenWithProgids" $null @{ 'Fintaxy.PdfSign' = '' } }
+$types = @{ '.pdf' = '' }; foreach ($e in $docExt) { $types[$e] = '' }
+Set-Key "$appKey\SupportedTypes" $null $types
+# Fișierele Markdown și Word: PDF Sign apare la „Deschide cu” (nu devine programul implicit)
+foreach ($e in $docExt) { Set-Key "$classes\$e\OpenWithProgids" $null @{ 'Fintaxy.PdfSign' = '' } }
 Set-Key "$appKey\shell\open\command" $cmd
 
 # Scurtături pe Desktop și în meniul Start (tragi un PDF peste ele ca să-l deschizi).
