@@ -149,6 +149,12 @@ async function openDoc(path, page) {
   q.delete('sig')
   history.replaceState(null, '', '?' + q)
   S.doc = await api('doc', { path })
+  if (S.doc.path !== path && S.doc.mdSource) {
+    // fișier Markdown: lucrăm mai departe cu PDF-ul lui de citit
+    PATH = path = S.doc.path
+    q.set('path', path)
+    history.replaceState(null, '', '?' + q)
+  }
   // paginile se țin în cache o oră; la fiecare deschidere cerem imaginea din fișierul de acum
   S.ver = Date.now()
   document.title = S.doc.name
@@ -2215,7 +2221,7 @@ async function openOther(force) {
   try {
     const r = await post('pick', { dir: S.doc?.dir || '' })
     if (!r.path) return
-    if (!/\.pdf$/i.test(r.path)) return toast('Alege un fișier PDF.', { err: true })
+    if (!/\.(pdf|md|markdown)$/i.test(r.path)) return toast('Alege un fișier PDF sau Markdown.', { err: true })
     main.querySelector('.start')?.remove()
     if (!S.lib.length) await loadLib()
     await openDoc(r.path)

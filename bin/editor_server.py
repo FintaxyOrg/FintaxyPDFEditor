@@ -136,13 +136,20 @@ def xfa_sigfields(doc) -> list:
     return [f for f in xfasign.fields(doc) if f["name"] not in signed]
 
 
+def md_source(path: str):
+    import mdview
+    return mdview.source(path)
+
+
 def doc_info(path: str) -> dict:
     with LOCK:
         doc = open_doc(path)
         view = view_doc(path)
         xfa = fx_sign.is_xfa(doc)
         return {
-            "path": str(Path(path)), "name": Path(path).name, "dir": str(Path(path).parent),
+            "path": str(Path(path)), "name": md_source(path).name if md_source(path) else Path(path).name,
+            # PDF-ul de citit al unui .md stă în folderul aplicației: omul lucrează în folderul fișierului lui
+            "dir": str(fx_sign.home_dir(Path(path))), "mdSource": str(md_source(path) or ""),
             "pages": [{"w": p.rect.width, "h": p.rect.height, "rot": p.rotation} for p in view],
             # Formular XFA dinamic: paginile vin din PDF-ul de vizualizare, deci documentul e doar-citire aici.
             "xfaView": view is not doc,
@@ -751,7 +758,7 @@ def run_tool(body: dict) -> dict:
     remote = urllib.parse.unquote(m.group(1)) if m else ""
     ext = Path(remote).suffix.lower() or EXT.get(ctype) or mimetypes.guess_extension(ctype) or ".bin"
     suffix = re.sub(r"[^\w-]+", "-", body.get("suffix") or "rezultat").strip("-")
-    folder = src.parent
+    folder = fx_sign.home_dir(src)
     stem = src.stem
     if not body.get("usesDocument", True):
         # Conversie din alt fișier: rezultatul ia numele fișierului convertit, în folderul PDF-ului deschis.
@@ -965,6 +972,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not path.startswith("/api/") or not self.authorized(q):
                 return None if path.startswith("/api/") else self.send(404, "text/plain", b"")
             if path == "/api/doc":
+                import mdview
+                if mdview.is_md(q["path"]):
+                    # Fișier Markdown: editorul primește PDF-ul lui de citit (și calea acestuia, cu care lucrează mai departe)
+                    return self.json(doc_info(str(mdview.preview(q["path"]))))
                 return self.json(doc_info(q["path"]))
             if path == "/api/page":
                 return self.send(200, "image/png", page_png(q["path"], int(q["n"]), int(q.get("w", 1600))), cache=True)

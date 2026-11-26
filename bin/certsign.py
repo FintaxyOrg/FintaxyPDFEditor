@@ -400,7 +400,7 @@ def output_for(pdf: Path) -> Path:
     stem = pdf.stem
     if stem.lower().endswith("_semnat"):
         return pdf  # o semnătură în plus pe copia semnată: se adaugă în același fișier
-    return pdf.with_name(f"{stem}_semnat.pdf")
+    return fx_sign.home_dir(pdf) / f"{stem}_semnat.pdf"
 
 
 def sign_pdf(signer: WinSigner, pdf: str, place: dict | None = None, reason: str = "", location: str = "") -> str:
