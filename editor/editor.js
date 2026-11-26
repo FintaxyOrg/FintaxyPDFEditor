@@ -2221,7 +2221,7 @@ async function openOther(force) {
   try {
     const r = await post('pick', { dir: S.doc?.dir || '' })
     if (!r.path) return
-    if (!/\.(pdf|md|markdown)$/i.test(r.path)) return toast('Alege un fișier PDF sau Markdown.', { err: true })
+    if (!/\.(pdf|md|markdown|docx?|docm|dotx?|rtf|odt)$/i.test(r.path)) return toast('Alege un fișier PDF, Word sau Markdown.', { err: true })
     main.querySelector('.start')?.remove()
     if (!S.lib.length) await loadLib()
     await openDoc(r.path)

@@ -63,7 +63,7 @@ def pick_pdf(initial: str = "") -> str:
         try:
             en = english()
             p = filedialog.askopenfilename(parent=root, title="Choose the PDF" if en else "Alege PDF-ul", initialdir=folder or None,
-                                           filetypes=[("PDF, Markdown", "*.pdf *.md *.markdown"),
+                                           filetypes=[("PDF, Word, Markdown", "*.pdf *.docx *.doc *.docm *.dotx *.dot *.rtf *.odt *.md *.markdown"),
                                                       ("PDF documents" if en else "Documente PDF", "*.pdf"),
                                                       ("All files" if en else "Toate fișierele", "*.*")])
         finally:

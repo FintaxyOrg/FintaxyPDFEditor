@@ -313,6 +313,35 @@ NEED_OFFICE = ("LibreOffice, cel care face conversia, se instalează singur în 
 _MS_OFFICE = {"ok": None}  # None = încă nu știm dacă e instalat Microsoft Office
 
 
+class NeedOffice(RuntimeError):
+    """Nici Microsoft Office, nici LibreOffice (încă) pe calculator."""
+
+
+def office_one(src: Path, dst: Path) -> Path:
+    """Un document Office -> PDF: cu Microsoft Office dacă e instalat, altfel (sau dacă Office dă greș) cu LibreOffice.
+    NeedOffice când nu e niciunul; altă excepție, cu mesajul convertorului, când conversia nu a mers."""
+    import deps
+    if _MS_OFFICE["ok"] is None:
+        _MS_OFFICE["ok"] = deps.ms_office()
+    if not _MS_OFFICE["ok"] and not deps.soffice():
+        raise NeedOffice(NEED_OFFICE)
+    err = ""
+    if _MS_OFFICE["ok"]:
+        r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", OFFICE_PS], capture_output=True,
+                           timeout=300, creationflags=NO_WINDOW, stdin=subprocess.DEVNULL,
+                           env={**os.environ, "FX_SRC": str(src), "FX_DST": str(dst)})
+        if r.returncode == 0 and dst.exists():
+            return dst
+        err = r.stderr.decode("utf-8", "replace")
+        if "80040154" in err or "Class not registered" in err:
+            _MS_OFFICE["ok"] = False  # Office e doar pe jumătate instalat: trecem pe LibreOffice
+        err = err.strip().splitlines()[-1] if err.strip() else "eroare"
+    if deps.soffice():
+        deps.office_to_pdf(src, dst, fx_sign.STATE)
+        return dst
+    raise NeedOffice(NEED_OFFICE) if not _MS_OFFICE["ok"] else RuntimeError(err)
+
+
 def office_to_pdf(path, f):
     """Word / Excel / PowerPoint (și ODT, RTF, TXT, CSV) -> PDF. Cu Microsoft Office dacă e instalat (fidel 100%),
     altfel cu LibreOffice, pornit fără fereastră (soffice.com --headless): nimic de apăsat nicăieri."""
@@ -331,28 +360,13 @@ def office_to_pdf(path, f):
             errors.append(f"{src.name}: fișierul nu mai există")
             continue
         dst = free_name(src.parent, src.stem, ".pdf")
-        err = ""
-        if _MS_OFFICE["ok"]:
-            r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", OFFICE_PS], capture_output=True,
-                               timeout=300, creationflags=NO_WINDOW, stdin=subprocess.DEVNULL,
-                               env={**os.environ, "FX_SRC": str(src), "FX_DST": str(dst)})
-            if r.returncode == 0 and dst.exists():
-                outs.append(str(dst))
-                continue
-            err = r.stderr.decode("utf-8", "replace")
-            if "80040154" in err or "Class not registered" in err:
-                _MS_OFFICE["ok"] = False  # Office e doar pe jumătate instalat: trecem pe LibreOffice
-            err = err.strip().splitlines()[-1] if err.strip() else "eroare"
-        if deps.soffice():
-            try:
-                deps.office_to_pdf(src, dst, fx_sign.STATE)
-                outs.append(str(dst))
-                continue
-            except Exception as e2:
-                err = str(e2)
-        elif not _MS_OFFICE["ok"]:
+        try:
+            office_one(src, dst)
+            outs.append(str(dst))
+        except NeedOffice:
             raise RuntimeError(NEED_OFFICE)
-        errors.append(f"{src.name}: {err}")
+        except Exception as e:
+            errors.append(f"{src.name}: {e}")
     if not outs:
         raise RuntimeError("; ".join(errors))
     res = {"kind": "pdf" if len(outs) == 1 else "folder", "out": outs[0] if len(outs) == 1 else str(Path(outs[0]).parent),
