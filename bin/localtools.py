@@ -641,7 +641,7 @@ def _edge_pdf(source: str, target: Path, timeout: int = 180):
     os.replace(out, target)
 
 
-def _md_html(src: str) -> str:
+def _md_html(src: str, base: str = "") -> str:
     """Markdown simplu -> HTML (titluri, liste, îngroșat, cursiv, cod, linkuri, tabele): cât trebuie pentru o notă."""
     import html
 
@@ -650,7 +650,9 @@ def _md_html(src: str) -> str:
         t = re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
         t = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", t)
         t = re.sub(r"(?<![*\w])\*([^*\s][^*]*)\*", r"<i>\1</i>", t)
-        return re.sub(r"\[([^\]]+)\]\((https?://[^\s)]+)\)", r'<a href="\2">\1</a>', t)
+        t = re.sub(r"~~([^~]+)~~", r"<s>\1</s>", t)
+        t = re.sub(r"!\[([^\]]*)\]\(([^\s)]+)\)", r'<img alt="\1" src="\2">', t)
+        return re.sub(r"(?<!!)\[([^\]]+)\]\((https?://[^\s)]+)\)", r'<a href="\2">\1</a>', t)
     out, lst, code, table = [], None, None, None
 
     def flush():
@@ -688,9 +690,17 @@ def _md_html(src: str) -> str:
             if not lst or lst[0] != tag:
                 flush()
                 lst = (tag, [])
-            lst[1].append(inline(m[2]))
+            box = re.match(r"\[([ xX])\]\s+(.*)", m[2])  # listă de bifat
+            lst[1].append(("☑ " if box[1].strip() else "☐ ") + inline(box[2]) if box else inline(m[2]))
             continue
         flush()
+        if re.fullmatch(r"\s*([-*_])(\s*\1){2,}\s*", line):
+            out.append("<hr>")
+            continue
+        q = re.match(r"\s*>\s?(.*)", line)
+        if q:
+            out.append(f"<blockquote>{inline(q[1])}</blockquote>")
+            continue
         h = re.match(r"(#{1,6})\s+(.*)", line)
         if h:
             out.append(f"<h{len(h[1])}>{inline(h[2])}</h{len(h[1])}>")
@@ -699,8 +709,12 @@ def _md_html(src: str) -> str:
     flush()
     css = ("body{font:12pt/1.5 'Segoe UI',Arial,sans-serif;margin:18mm;color:#1c2230}table{border-collapse:collapse}"
            "td,th{border:1px solid #bbb;padding:4px 8px;text-align:left}pre,code{font-family:Consolas,monospace;background:#f3f5f9}"
-           "pre{padding:8px;white-space:pre-wrap}")
-    return f'<!doctype html><html><head><meta charset="utf-8"><style>{css}</style></head><body>' + "\n".join(out) + "</body></html>"
+           "pre{padding:8px;white-space:pre-wrap}img{max-width:100%}hr{border:0;border-top:1px solid #c9ced8;margin:14px 0}"
+           "blockquote{margin:0;padding:2px 12px;border-left:3px solid #c9ced8;color:#4a5263}blockquote+blockquote{margin-top:0}"
+           "h1,h2,h3,h4{break-after:avoid}tr,pre,img{break-inside:avoid}")
+    head = f'<base href="{html.escape(base)}">' if base else ""
+    return (f'<!doctype html><html><head><meta charset="utf-8">{head}<style>{css}</style></head><body>' + "\n".join(out)
+            + "</body></html>")
 
 
 def web_to_pdf(path, f):

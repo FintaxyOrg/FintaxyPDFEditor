@@ -363,11 +363,23 @@ def write_segment(page, chain: list, x: float, y: float, text: str, size: float,
     return x
 
 
+def home_dir(pdf: Path) -> Path:
+    """Folderul în care se scriu copiile unui PDF. De obicei al lui; pentru PDF-ul de citit al unui fișier Markdown
+    (bin/mdview.py, ținut în STATE/md) e folderul .md-ului, ca omul să-și găsească fișierul lângă original."""
+    pdf = Path(pdf)
+    try:
+        if pdf.parent.parent.resolve() == (STATE / "md").resolve():
+            return Path(json.loads((pdf.parent / "origin.json").read_text(encoding="utf-8"))["source"]).parent
+    except (OSError, ValueError, KeyError):
+        pass
+    return pdf.parent
+
+
 def output_path(pdf: Path, signed: bool = True) -> Path:
     stem = pdf.stem
     if stem.lower().endswith(("_semnat", "_editat")):
         return pdf  # a doua trecere: scriem peste copia noastră
-    return pdf.with_name(f"{stem}_{'semnat' if signed else 'editat'}.pdf")
+    return home_dir(pdf) / f"{stem}_{'semnat' if signed else 'editat'}.pdf"
 
 
 def backup_path(target: Path) -> Path:
